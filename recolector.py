@@ -14,9 +14,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SYMBOLS = [
-    "BTC",   # contexto
+    "BTC",
     "SUI", "ARB", "RAY", "NEAR", "UNI", "ENA", "APT",
     "AVAX", "INJ", "ZEC", "SEI", "DASH", "WLD",
+    "ETH", "LINK", "SOL", "BNB", "LTC", "STX", "HYPE",
 ]
 
 RETENCION_PULSO_H = 12
