@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SPOT RSI BOT — interspot v3 (simplificado)
-- Alerta cuando una moneda alcanza RSI extremo (sobreventa o sobrecompra)
-- En cada alerta incluye el estado de BTC para contexto
-- Sin clasificaciones. Tú decides.
-- Lee pulso completo (12h)
+SPOT RSI BOT — interspot v4
+- Alerta cruces (entrada/salida de zona) en 4h, 1D, 1W
+- Alerta estados extremos actuales (1D/1W > 80 o < 20) UNA VEZ
+- Incluye estado de BTC en cada alerta
+- Anti-spam por timestamp
 """
 
 import json
@@ -34,9 +34,13 @@ SIGNALS_LOG = Path("data/signals_log.jsonl")
 
 LIMA_OFFSET = timedelta(hours=-5)
 
-# Umbrales RSI (mismos para 4h, 1D, 1W)
+# Umbrales normales
 RSI_SOBREVENTA   = 34.0
 RSI_SOBRECOMPRA  = 70.0
+
+# Umbrales extremos
+RSI_EXTREMO_BAJO = 20.0
+RSI_EXTREMO_ALTO = 80.0
 
 # ============================================================
 # HELPERS
@@ -110,46 +114,38 @@ def log_senal(symbol, tipo, detalle):
         f.write(json.dumps(registro, ensure_ascii=False) + "\n")
 
 
-def detectar_cruces(pulso, campo_rsi, umbral_bajo, umbral_alto):
+def detectar_cruces_con_ts(pulso, campo_rsi, umbral_bajo, umbral_alto):
     """
-    Detecta si en el pulso hubo:
-      - entrada en sobreventa (cruzó ↓ umbral_bajo)
-      - salida de sobreventa (cruzó ↑ umbral_bajo)
-      - entrada en sobrecompra (cruzó ↑ umbral_alto)
-      - salida de sobrecompra (cruzó ↓ umbral_alto)
+    Devuelve dict con el ts del último cruce detectado en el pulso.
     """
-    entra_ov = sale_ov = entra_ob = sale_ob = False
+    ultimo = {"entra_ov": None, "sale_ov": None, "entra_ob": None, "sale_ob": None}
     prev = None
     for p in pulso:
         v = p.get(campo_rsi)
         if v is None:
             continue
+        ts = p.get("ts")
         if prev is not None:
-            if prev >= umbral_bajo and v < umbral_bajo:
-                entra_ov = True
-                sale_ov = False
-            if prev < umbral_bajo and v >= umbral_bajo:
-                sale_ov = True
-                entra_ov = False
-            if prev <= umbral_alto and v > umbral_alto:
-                entra_ob = True
-                sale_ob = False
-            if prev > umbral_alto and v <= umbral_alto:
-                sale_ob = True
-                entra_ob = False
-        prev = v
-    return entra_ov, sale_ov, entra_ob, sale_ob
+            prev_v = prev.get(campo_rsi)
+            if prev_v >= umbral_bajo and v < umbral_bajo:
+                ultimo["entra_ov"] = ts
+            if prev_v < umbral_bajo and v >= umbral_bajo:
+                ultimo["sale_ov"] = ts
+            if prev_v <= umbral_alto and v > umbral_alto:
+                ultimo["entra_ob"] = ts
+            if prev_v > umbral_alto and v <= umbral_alto:
+                ultimo["sale_ob"] = ts
+        prev = p
+    return ultimo
 
 
 def estado_btc_lineas(btc):
-    """Devuelve 3 líneas con el estado de BTC."""
     if not btc or btc.get("rsi4h") is None:
         return "🌐 BTC: sin datos"
     lineas = [
         f"🌐 BTC: ${btc['precio']:.2f}",
         f"   RSI4h={btc['rsi4h']:.1f} | RSI1D={btc['rsi1d'] if btc.get('rsi1d') is not None else '—'} | RSI1W={btc['rsi1w'] if btc.get('rsi1w') is not None else '—'}",
     ]
-    # Interpretación simple de BTC
     r4 = btc["rsi4h"]
     if r4 >= RSI_SOBRECOMPRA:
         lineas.append("   ⚠️ BTC sobrecomprado → altcoin arriba puede ser trampa")
@@ -166,13 +162,13 @@ def estado_btc_lineas(btc):
 
 def main():
     print("=" * 70, flush=True)
-    print("🪙 SPOT RSI BOT — interspot v3 (simple)", flush=True)
-    print(f"   {len(SYMBOLS)} monedas | alertas de extremos + contexto BTC", flush=True)
-    print(f"   Sobreventa: < {RSI_SOBREVENTA}  |  Sobrecompra: > {RSI_SOBRECOMPRA}", flush=True)
+    print("🪙 SPOT RSI BOT — interspot v4", flush=True)
+    print(f"   {len(SYMBOLS)} monedas | cruces + estados extremos", flush=True)
+    print(f"   Sobreventa < {RSI_SOBREVENTA} | Sobrecompra > {RSI_SOBRECOMPRA} | Extremos < {RSI_EXTREMO_BAJO} o > {RSI_EXTREMO_ALTO}", flush=True)
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
 
-    # ── Contexto BTC ──
+    # ── BTC ──
     print("\n🌐 BTC CONTEXTO", flush=True)
     btc_data = leer_cache_remoto("BTC")
     btc = {}
@@ -185,14 +181,7 @@ def main():
             "rsi1w": u.get("rsi1w"),
         }
         print(f"   Precio: ${btc['precio']:.2f}", flush=True)
-        print(f"   RSI4h: {btc['rsi4h']:.1f}", flush=True)
-        if btc['rsi4h'] is not None:
-            if btc['rsi4h'] >= RSI_SOBRECOMPRA:
-                print(f"   ⚠️ BTC sobrecomprado", flush=True)
-            elif btc['rsi4h'] <= RSI_SOBREVENTA:
-                print(f"   ✅ BTC en suelo", flush=True)
-            else:
-                print(f"   ➖ BTC neutral", flush=True)
+        print(f"   RSI4h: {btc['rsi4h']:.1f} | RSI1D: {btc['rsi1d']:.1f} | RSI1W: {btc['rsi1w']:.1f}", flush=True)
     else:
         print("   ⚠️ Sin datos de BTC", flush=True)
 
@@ -227,145 +216,209 @@ def main():
         print(f"   Precio: ${precio:.6f} | RSI4h={rsi4h:.1f} | RSI1D={rsi1d_str} | RSI1W={rsi1w_str}", flush=True)
 
         prev = estado.get(symbol, {})
+        cruces_prev = prev.get("cruces", {})
 
-        # Detectar cruces en 4h, 1D, 1W
-        e_ov_4h, s_ov_4h, e_ob_4h, s_ob_4h = detectar_cruces(pulso, "rsi4h", RSI_SOBREVENTA, RSI_SOBRECOMPRA)
-        e_ov_1d, s_ov_1d, e_ob_1d, s_ob_1d = detectar_cruces(pulso, "rsi1d", RSI_SOBREVENTA, RSI_SOBRECOMPRA)
-        e_ov_1w, s_ov_1w, e_ob_1w, s_ob_1w = detectar_cruces(pulso, "rsi1w", RSI_SOBREVENTA, RSI_SOBRECOMPRA)
+        # Detectar cruces con timestamp
+        cruces_4h = detectar_cruces_con_ts(pulso, "rsi4h", RSI_SOBREVENTA, RSI_SOBRECOMPRA)
+        cruces_1d = detectar_cruces_con_ts(pulso, "rsi1d", RSI_SOBREVENTA, RSI_SOBRECOMPRA)
+        cruces_1w = detectar_cruces_con_ts(pulso, "rsi1w", RSI_SOBREVENTA, RSI_SOBRECOMPRA)
 
         btc_txt = estado_btc_lineas(btc)
 
-        # ─────────────────────────────────────
-        # ALERTA: ENTRÓ EN SOBREVENTA (4h)
-        # ─────────────────────────────────────
-        if e_ov_4h:
+        def ya_alertado(tf, tipo, ts):
+            """Comprueba si ya alertamos ese cruce (mismo ts)."""
+            if ts is None:
+                return True
+            return cruces_prev.get(f"{tf}_{tipo}") == ts
+
+        def marcar(tf, tipo, ts):
+            if ts is not None:
+                cruces_prev[f"{tf}_{tipo}"] = ts
+
+        # ═══════════════════════════════════════
+        # CRUCES 4H
+        # ═══════════════════════════════════════
+        if cruces_4h["entra_ov"] and not ya_alertado("4h", "entra_ov", cruces_4h["entra_ov"]):
             msg = (
                 f"🟢 {symbol} ENTRÓ EN SOBREVENTA (4h)\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"📈 Precio: ${precio:.6f}\n"
                 f"📊 RSI4h: {rsi4h:.1f}  (cruzó ↓ {RSI_SOBREVENTA})\n"
-                f"📊 RSI1D: {rsi1d_str}\n"
-                f"📊 RSI1W: {rsi1w_str}\n"
+                f"📊 RSI1D: {rsi1d_str} | RSI1W: {rsi1w_str}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"{btc_txt}\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
                 f"🕐 {ahora_lima} Lima"
             )
             print(f"   🟢 4h entró sobreventa", flush=True)
             enviar_telegram(msg)
             señales.append(("SOBREVENTA-4H", symbol))
+            marcar("4h", "entra_ov", cruces_4h["entra_ov"])
             log_senal(symbol, "SOBREVENTA_4H", {"rsi4h": rsi4h, "rsi1d": rsi1d, "rsi1w": rsi1w, "precio": precio})
 
-        # ─────────────────────────────────────
-        # ALERTA: ENTRÓ EN SOBRECOMPRA (4h)
-        # ─────────────────────────────────────
-        if e_ob_4h:
+        if cruces_4h["entra_ob"] and not ya_alertado("4h", "entra_ob", cruces_4h["entra_ob"]):
             msg = (
                 f"🔴 {symbol} ENTRÓ EN SOBRECOMPRA (4h)\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"📈 Precio: ${precio:.6f}\n"
                 f"📊 RSI4h: {rsi4h:.1f}  (cruzó ↑ {RSI_SOBRECOMPRA})\n"
-                f"📊 RSI1D: {rsi1d_str}\n"
-                f"📊 RSI1W: {rsi1w_str}\n"
+                f"📊 RSI1D: {rsi1d_str} | RSI1W: {rsi1w_str}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"{btc_txt}\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
                 f"🕐 {ahora_lima} Lima"
             )
             print(f"   🔴 4h entró sobrecompra", flush=True)
             enviar_telegram(msg)
             señales.append(("SOBRECOMPRA-4H", symbol))
+            marcar("4h", "entra_ob", cruces_4h["entra_ob"])
             log_senal(symbol, "SOBRECOMPRA_4H", {"rsi4h": rsi4h, "rsi1d": rsi1d, "rsi1w": rsi1w, "precio": precio})
 
-        # ─────────────────────────────────────
-        # ALERTA: SALIÓ DE SOBREVENTA (4h) → posible COMPRA
-        # ─────────────────────────────────────
-        if s_ov_4h:
+        if cruces_4h["sale_ov"] and not ya_alertado("4h", "sale_ov", cruces_4h["sale_ov"]):
             msg = (
                 f"🟢🟢 {symbol} SALIÓ DE SOBREVENTA (4h)\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"📈 Precio: ${precio:.6f}\n"
                 f"📊 RSI4h: {rsi4h:.1f}  (cruzó ↑ {RSI_SOBREVENTA})\n"
-                f"📊 RSI1D: {rsi1d_str}\n"
-                f"📊 RSI1W: {rsi1w_str}\n"
+                f"📊 RSI1D: {rsi1d_str} | RSI1W: {rsi1w_str}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"{btc_txt}\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
                 f"💡 Momento típico de COMPRA si BTC acompaña\n"
                 f"🕐 {ahora_lima} Lima"
             )
             print(f"   🟢🟢 4h salió sobreventa → COMPRA", flush=True)
             enviar_telegram(msg)
             señales.append(("COMPRA-4H", symbol))
+            marcar("4h", "sale_ov", cruces_4h["sale_ov"])
             log_senal(symbol, "COMPRA_4H", {"rsi4h": rsi4h, "rsi1d": rsi1d, "rsi1w": rsi1w, "precio": precio})
 
-        # ─────────────────────────────────────
-        # ALERTA: SALIÓ DE SOBRECOMPRA (4h) → posible VENTA
-        # ─────────────────────────────────────
-        if s_ob_4h:
+        if cruces_4h["sale_ob"] and not ya_alertado("4h", "sale_ob", cruces_4h["sale_ob"]):
             msg = (
                 f"🔴🔴 {symbol} SALIÓ DE SOBRECOMPRA (4h)\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"📈 Precio: ${precio:.6f}\n"
                 f"📊 RSI4h: {rsi4h:.1f}  (cruzó ↓ {RSI_SOBRECOMPRA})\n"
-                f"📊 RSI1D: {rsi1d_str}\n"
-                f"📊 RSI1W: {rsi1w_str}\n"
+                f"📊 RSI1D: {rsi1d_str} | RSI1W: {rsi1w_str}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"{btc_txt}\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
                 f"💡 Momento típico de VENTA si BTC confirma giro\n"
                 f"🕐 {ahora_lima} Lima"
             )
             print(f"   🔴🔴 4h salió sobrecompra → VENTA", flush=True)
             enviar_telegram(msg)
             señales.append(("VENTA-4H", symbol))
+            marcar("4h", "sale_ob", cruces_4h["sale_ob"])
             log_senal(symbol, "VENTA_4H", {"rsi4h": rsi4h, "rsi1d": rsi1d, "rsi1w": rsi1w, "precio": precio})
 
-        # ─────────────────────────────────────
-        # ALERTAS 1D (contexto)
-        # ─────────────────────────────────────
-        if e_ov_1d:
+        # ═══════════════════════════════════════
+        # CRUCES 1D (contexto)
+        # ═══════════════════════════════════════
+        if cruces_1d["entra_ov"] and not ya_alertado("1d", "entra_ov", cruces_1d["entra_ov"]):
             enviar_telegram(
                 f"🟡 {symbol} — 1D ENTRÓ EN SOBREVENTA\n"
                 f"RSI1D={rsi1d_str} | RSI4h={rsi4h:.1f} | RSI1W={rsi1w_str}\n"
-                f"Precio: ${precio:.6f}\n"
-                f"{btc_txt}\n"
-                f"🕐 {ahora_lima}"
+                f"Precio: ${precio:.6f}\n{btc_txt}\n🕐 {ahora_lima}"
             )
+            marcar("1d", "entra_ov", cruces_1d["entra_ov"])
             print(f"   🟡 1D entró sobreventa", flush=True)
-        if e_ob_1d:
+
+        if cruces_1d["entra_ob"] and not ya_alertado("1d", "entra_ob", cruces_1d["entra_ob"]):
             enviar_telegram(
                 f"🟠 {symbol} — 1D ENTRÓ EN SOBRECOMPRA\n"
                 f"RSI1D={rsi1d_str} | RSI4h={rsi4h:.1f} | RSI1W={rsi1w_str}\n"
-                f"Precio: ${precio:.6f}\n"
-                f"{btc_txt}\n"
-                f"🕐 {ahora_lima}"
+                f"Precio: ${precio:.6f}\n{btc_txt}\n🕐 {ahora_lima}"
             )
+            marcar("1d", "entra_ob", cruces_1d["entra_ob"])
             print(f"   🟠 1D entró sobrecompra", flush=True)
 
-        # ─────────────────────────────────────
-        # ALERTAS 1W (contexto mayor)
-        # ─────────────────────────────────────
-        if e_ov_1w:
+        # ═══════════════════════════════════════
+        # CRUCES 1W (contexto mayor)
+        # ═══════════════════════════════════════
+        if cruces_1w["entra_ov"] and not ya_alertado("1w", "entra_ov", cruces_1w["entra_ov"]):
             enviar_telegram(
                 f"🟡 {symbol} — 1W ENTRÓ EN SOBREVENTA\n"
                 f"RSI1W={rsi1w_str} | RSI1D={rsi1d_str} | RSI4h={rsi4h:.1f}\n"
-                f"Precio: ${precio:.6f}\n"
-                f"{btc_txt}\n"
-                f"🕐 {ahora_lima}"
+                f"Precio: ${precio:.6f}\n{btc_txt}\n🕐 {ahora_lima}"
             )
+            marcar("1w", "entra_ov", cruces_1w["entra_ov"])
             print(f"   🟡 1W entró sobreventa", flush=True)
-        if e_ob_1w:
+
+        if cruces_1w["entra_ob"] and not ya_alertado("1w", "entra_ob", cruces_1w["entra_ob"]):
             enviar_telegram(
                 f"🟠 {symbol} — 1W ENTRÓ EN SOBRECOMPRA\n"
                 f"RSI1W={rsi1w_str} | RSI1D={rsi1d_str} | RSI4h={rsi4h:.1f}\n"
-                f"Precio: ${precio:.6f}\n"
-                f"{btc_txt}\n"
-                f"🕐 {ahora_lima}"
+                f"Precio: ${precio:.6f}\n{btc_txt}\n🕐 {ahora_lima}"
             )
+            marcar("1w", "entra_ob", cruces_1w["entra_ob"])
             print(f"   🟠 1W entró sobrecompra", flush=True)
 
-        estado[symbol] = {**prev, "rsi4h": rsi4h, "rsi1d": rsi1d, "rsi1w": rsi1w}
+        # ═══════════════════════════════════════
+        # ESTADOS EXTREMOS ACTUALES (1D/1W > 80 o < 20)
+        # Solo avisa UNA VEZ hasta que salga de la zona
+        # ═══════════════════════════════════════
+        estado_extremo = prev.get("estado_extremo", {})
+
+        # 1D extremo alto
+        if rsi1d is not None and rsi1d >= RSI_EXTREMO_ALTO:
+            if estado_extremo.get("1d_ext_alto") != True:
+                enviar_telegram(
+                    f"🟠🟠 {symbol} — 1D EN EXTREMO ALTO\n"
+                    f"RSI1D={rsi1d_str} (≥{RSI_EXTREMO_ALTO}) | RSI4h={rsi4h:.1f} | RSI1W={rsi1w_str}\n"
+                    f"Precio: ${precio:.6f}\n{btc_txt}\n"
+                    f"⚠️ Zona histórica de techos diarios\n🕐 {ahora_lima}"
+                )
+                estado_extremo["1d_ext_alto"] = True
+                print(f"   🟠🟠 1D extremo alto", flush=True)
+        else:
+            estado_extremo["1d_ext_alto"] = False
+
+        # 1D extremo bajo
+        if rsi1d is not None and rsi1d <= RSI_EXTREMO_BAJO:
+            if estado_extremo.get("1d_ext_bajo") != True:
+                enviar_telegram(
+                    f"🟢🟢 {symbol} — 1D EN EXTREMO BAJO\n"
+                    f"RSI1D={rsi1d_str} (≤{RSI_EXTREMO_BAJO}) | RSI4h={rsi4h:.1f} | RSI1W={rsi1w_str}\n"
+                    f"Precio: ${precio:.6f}\n{btc_txt}\n"
+                    f"⚠️ Zona histórica de suelos diarios\n🕐 {ahora_lima}"
+                )
+                estado_extremo["1d_ext_bajo"] = True
+                print(f"   🟢🟢 1D extremo bajo", flush=True)
+        else:
+            estado_extremo["1d_ext_bajo"] = False
+
+        # 1W extremo alto
+        if rsi1w is not None and rsi1w >= RSI_EXTREMO_ALTO:
+            if estado_extremo.get("1w_ext_alto") != True:
+                enviar_telegram(
+                    f"🟠🟠 {symbol} — 1W EN EXTREMO ALTO\n"
+                    f"RSI1W={rsi1w_str} (≥{RSI_EXTREMO_ALTO}) | RSI1D={rsi1d_str} | RSI4h={rsi4h:.1f}\n"
+                    f"Precio: ${precio:.6f}\n{btc_txt}\n"
+                    f"⚠️ Zona histórica de techos semanales\n🕐 {ahora_lima}"
+                )
+                estado_extremo["1w_ext_alto"] = True
+                print(f"   🟠🟠 1W extremo alto", flush=True)
+        else:
+            estado_extremo["1w_ext_alto"] = False
+
+        # 1W extremo bajo
+        if rsi1w is not None and rsi1w <= RSI_EXTREMO_BAJO:
+            if estado_extremo.get("1w_ext_bajo") != True:
+                enviar_telegram(
+                    f"🟢🟢 {symbol} — 1W EN EXTREMO BAJO\n"
+                    f"RSI1W={rsi1w_str} (≤{RSI_EXTREMO_BAJO}) | RSI1D={rsi1d_str} | RSI4h={rsi4h:.1f}\n"
+                    f"Precio: ${precio:.6f}\n{btc_txt}\n"
+                    f"⚠️ Zona histórica de suelos semanales\n🕐 {ahora_lima}"
+                )
+                estado_extremo["1w_ext_bajo"] = True
+                print(f"   🟢🟢 1W extremo bajo", flush=True)
+        else:
+            estado_extremo["1w_ext_bajo"] = False
+
+        estado[symbol] = {
+            "rsi4h": rsi4h,
+            "rsi1d": rsi1d,
+            "rsi1w": rsi1w,
+            "cruces": cruces_prev,
+            "estado_extremo": estado_extremo,
+        }
 
     guardar_estado(estado)
 
@@ -375,7 +428,7 @@ def main():
         for tipo, sym in señales:
             print(f"   {tipo} {sym}", flush=True)
     else:
-        print("Sin alertas.", flush=True)
+        print("Sin cruces nuevos. (Los extremos actuales se alertan 1 vez)", flush=True)
     print("=" * 70, flush=True)
     print("🏁 TERMINADO", flush=True)
 
