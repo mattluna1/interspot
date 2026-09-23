@@ -16,7 +16,7 @@ from pathlib import Path
 SYMBOLS = [
     "BTC",   # contexto
     "SUI", "ARB", "RAY", "NEAR", "UNI", "ENA", "APT",
-    "AVAX", "INJ", "ZEC", "SEI", "DASH",
+    "AVAX", "INJ", "ZEC", "SEI", "DASH", "WLD",
 ]
 
 RETENCION_PULSO_H = 12
