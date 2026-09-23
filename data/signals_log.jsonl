@@ -3,3 +3,4 @@
 {"ts": "2026-09-23T06:22:31.471926+00:00", "symbol": "SEI", "tipo": "SOBRECOMPRA_4H", "rsi4h": 69.01, "rsi1d": 71.51, "rsi1w": 50.25, "precio": 0.06107}
 {"ts": "2026-09-23T06:22:31.973442+00:00", "symbol": "SEI", "tipo": "VENTA_4H", "rsi4h": 69.01, "rsi1d": 71.51, "rsi1w": 50.25, "precio": 0.06107}
 {"ts": "2026-09-23T07:17:49.100072+00:00", "symbol": "SEI", "tipo": "SOBRECOMPRA_4H", "rsi4h": 71.69, "rsi1d": 72.89, "rsi1w": 50.66, "precio": 0.06165}
+{"ts": "2026-09-23T08:17:48.266088+00:00", "symbol": "SEI", "tipo": "VENTA_4H", "rsi4h": 68.12, "rsi1d": 71.23, "rsi1w": 50.16, "precio": 0.06095}
