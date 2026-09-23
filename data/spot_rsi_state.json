@@ -1,8 +1,8 @@
 {
   "SUI": {
-    "rsi4h": 54.47,
-    "rsi1d": 66.89,
-    "rsi1w": 52.22,
+    "rsi4h": 53.49,
+    "rsi1d": 66.55,
+    "rsi1w": 52.03,
     "cruces": {
       "4h_sale_ob": 1790162048,
       "4h_entra_ob": 1790161077
@@ -15,12 +15,13 @@
     }
   },
   "ARB": {
-    "rsi4h": 53.62,
-    "rsi1d": 71.23,
-    "rsi1w": 64.93,
+    "rsi4h": 51.4,
+    "rsi1d": 70.33,
+    "rsi1w": 64.44,
     "cruces": {
       "4h_entra_ob": 1790141924,
-      "4h_sale_ob": 1790143856
+      "4h_sale_ob": 1790143856,
+      "1d_entra_ob": 1790193310
     },
     "estado_extremo": {
       "1d_ext_alto": false,
@@ -30,12 +31,12 @@
     }
   },
   "RAY": {
-    "rsi4h": 69.81,
-    "rsi1d": 72.61,
-    "rsi1w": 80.3,
+    "rsi4h": 72.88,
+    "rsi1d": 74.17,
+    "rsi1w": 81.22,
     "cruces": {
       "1d_entra_ob": 1790174976,
-      "4h_entra_ob": 1790180160,
+      "4h_entra_ob": 1790189337,
       "4h_sale_ob": 1790187058
     },
     "estado_extremo": {
@@ -46,9 +47,9 @@
     }
   },
   "NEAR": {
-    "rsi4h": 56.28,
-    "rsi1d": 78.94,
-    "rsi1w": 78.81,
+    "rsi4h": 58.94,
+    "rsi1d": 79.91,
+    "rsi1w": 79.39,
     "cruces": {
       "4h_entra_ob": 1790175596,
       "4h_sale_ob": 1790177594
@@ -61,9 +62,9 @@
     }
   },
   "UNI": {
-    "rsi4h": 51.24,
-    "rsi1d": 78.1,
-    "rsi1w": 74.0,
+    "rsi4h": 51.83,
+    "rsi1d": 78.33,
+    "rsi1w": 74.11,
     "cruces": {
       "4h_sale_ob": 1790153937
     },
@@ -75,9 +76,9 @@
     }
   },
   "ENA": {
-    "rsi4h": 55.72,
-    "rsi1d": 69.84,
-    "rsi1w": 60.32,
+    "rsi4h": 53.62,
+    "rsi1d": 69.05,
+    "rsi1w": 59.91,
     "cruces": {
       "1d_entra_ob": 1790186057
     },
@@ -89,9 +90,9 @@
     }
   },
   "APT": {
-    "rsi4h": 51.05,
-    "rsi1d": 66.38,
-    "rsi1w": 45.01,
+    "rsi4h": 50.44,
+    "rsi1d": 66.09,
+    "rsi1w": 44.87,
     "cruces": {
       "4h_sale_ob": 1790169009,
       "4h_entra_ob": 1790164521
@@ -104,9 +105,9 @@
     }
   },
   "AVAX": {
-    "rsi4h": 47.36,
-    "rsi1d": 67.4,
-    "rsi1w": 57.68,
+    "rsi4h": 48.54,
+    "rsi1d": 67.85,
+    "rsi1w": 58.05,
     "cruces": {},
     "estado_extremo": {
       "1d_ext_alto": false,
@@ -116,9 +117,9 @@
     }
   },
   "INJ": {
-    "rsi4h": 52.53,
-    "rsi1d": 67.91,
-    "rsi1w": 67.21,
+    "rsi4h": 50.6,
+    "rsi1d": 66.91,
+    "rsi1w": 66.46,
     "cruces": {
       "1w_entra_ob": 1790175596,
       "1d_entra_ob": 1790174976
@@ -131,9 +132,9 @@
     }
   },
   "ZEC": {
-    "rsi4h": 50.58,
-    "rsi1d": 72.55,
-    "rsi1w": 79.06,
+    "rsi4h": 49.83,
+    "rsi1d": 71.74,
+    "rsi1w": 78.95,
     "cruces": {},
     "estado_extremo": {
       "1d_ext_alto": false,
@@ -143,9 +144,9 @@
     }
   },
   "SEI": {
-    "rsi4h": 59.59,
-    "rsi1d": 66.72,
-    "rsi1w": 49.09,
+    "rsi4h": 58.37,
+    "rsi1d": 66.28,
+    "rsi1w": 48.78,
     "cruces": {
       "4h_entra_ob": 1790145393,
       "4h_sale_ob": 1790151088,
@@ -159,9 +160,9 @@
     }
   },
   "DASH": {
-    "rsi4h": 44.86,
-    "rsi1d": 57.16,
-    "rsi1w": 59.26,
+    "rsi4h": 45.16,
+    "rsi1d": 57.35,
+    "rsi1w": 59.32,
     "cruces": {},
     "estado_extremo": {
       "1d_ext_alto": false,
