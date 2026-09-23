@@ -13,3 +13,7 @@
 {"ts": "2026-09-23T10:16:55.049412+00:00", "symbol": "NEAR", "tipo": "VENTA_4H", "rsi4h": 68.78, "rsi1d": 85.21, "rsi1w": 79.88, "precio": 4.524}
 {"ts": "2026-09-23T10:16:56.093735+00:00", "symbol": "APT", "tipo": "SOBRECOMPRA_4H", "rsi4h": 68.92, "rsi1d": 72.4, "rsi1w": 47.72, "precio": 0.8278}
 {"ts": "2026-09-23T10:16:56.651353+00:00", "symbol": "APT", "tipo": "VENTA_4H", "rsi4h": 68.92, "rsi1d": 72.4, "rsi1w": 47.72, "precio": 0.8278}
+{"ts": "2026-09-23T11:16:29.434887+00:00", "symbol": "SUI", "tipo": "SOBRECOMPRA_4H", "rsi4h": 69.93, "rsi1d": 74.01, "rsi1w": 54.11, "precio": 1.0169}
+{"ts": "2026-09-23T11:16:29.904358+00:00", "symbol": "SUI", "tipo": "VENTA_4H", "rsi4h": 69.93, "rsi1d": 74.01, "rsi1w": 54.11, "precio": 1.0169}
+{"ts": "2026-09-23T11:16:31.379320+00:00", "symbol": "NEAR", "tipo": "SOBRECOMPRA_4H", "rsi4h": 69.83, "rsi1d": 85.48, "rsi1w": 80.1, "precio": 4.574}
+{"ts": "2026-09-23T11:16:31.883460+00:00", "symbol": "NEAR", "tipo": "VENTA_4H", "rsi4h": 69.83, "rsi1d": 85.48, "rsi1w": 80.1, "precio": 4.574}
