@@ -17,7 +17,8 @@ from pathlib import Path
 
 SYMBOLS = [
     "SUI", "ARB", "RAY", "NEAR", "UNI", "ENA",
-    "APT", "AVAX", "INJ", "ZEC", "SEI", "DASH", "WLD"
+    "APT", "AVAX", "INJ", "ZEC", "SEI", "DASH", "WLD",
+    "ETH", "LINK", "SOL", "BNB", "LTC", "STX", "HYPE",
 ]
 
 CACHE_REMOTE_BASE = (
