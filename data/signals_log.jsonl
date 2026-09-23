@@ -26,3 +26,4 @@
 {"ts": "2026-09-23T16:18:25.734877+00:00", "symbol": "RAY", "tipo": "SOBRECOMPRA_4H", "rsi4h": 70.59, "rsi1d": 72.93, "rsi1w": 80.49, "precio": 2.0352}
 {"ts": "2026-09-23T16:18:26.291725+00:00", "symbol": "RAY", "tipo": "VENTA_4H", "rsi4h": 70.59, "rsi1d": 72.93, "rsi1w": 80.49, "precio": 2.0352}
 {"ts": "2026-09-23T16:18:27.442831+00:00", "symbol": "NEAR", "tipo": "VENTA_4H", "rsi4h": 55.17, "rsi1d": 78.6, "rsi1w": 78.58, "precio": 4.263}
+{"ts": "2026-09-23T18:20:45.949062+00:00", "symbol": "RAY", "tipo": "VENTA_4H", "rsi4h": 69.81, "rsi1d": 72.61, "rsi1w": 80.3, "precio": 2.0179}
