@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SPOT RSI BOT — interspot v10
+SPOT RSI BOT — interspot v11
 - Progresión de círculos: sin círculo (aviso) → 1 círculo (BTC 4h) → 2 círculos (BTC 1D)
 - 1D de la moneda: 🔴 directo
 - 1W de la moneda: 🔴🔴 directo
 - Contexto BTC ampliado (4h + 1D + impulso)
-- [NUEVO] Alerta 24h bajando + 48h bajando (48h solo si disparó 24h)
+- [NUEVO] Alerta cada 24h en tendencia bajista (24/48/72/96...)
 """
 
 import json
@@ -59,10 +59,6 @@ BTC_RSI15_ALTO = 45.0
 BTC_RSI15_BAJO = 55.0
 BTC_RSI1_ALTO  = 48.0
 BTC_RSI1_BAJO  = 52.0
-
-# [NUEVO] Umbrales tendencia bajista
-HORAS_BAJANDO_24H = 24
-HORAS_BAJANDO_48H = 48
 
 
 def hora_lima():
@@ -281,7 +277,7 @@ def btc_resumen(btc, ctx):
 
 def main():
     print("=" * 70, flush=True)
-    print("🪙 SPOT RSI BOT — interspot v10 (círculos + 24h/48h bajista)", flush=True)
+    print("🪙 SPOT RSI BOT — interspot v11 (círculos + bajista 24h)", flush=True)
     print(f"   {len(SYMBOLS)} monedas", flush=True)
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
@@ -335,7 +331,6 @@ def main():
         r1d = f"{rsi1d:.1f}" if rsi1d is not None else "—"
         r1w = f"{rsi1w:.1f}" if rsi1w is not None else "—"
 
-        # [NUEVO] Datos tendencia bajista
         horas_dm = u.get("horas_desde_max", 0)
         max_r = u.get("max_reciente")
         tend = u.get("tendencia_bajista", False)
@@ -556,47 +551,36 @@ def main():
                 log_senal(symbol, "1W_OS", {"rsi4h": rsi4h, "rsi1d": rsi1d, "rsi1w": rsi1w, "precio": precio})
 
         # ═══════════════════════════════════════════════
-        # [NUEVO] 24H / 48H EN TENDENCIA BAJISTA
+        # TENDENCIA BAJISTA — alerta cada 24h
         # ═══════════════════════════════════════════════
         if max_r is not None and precio < max_r and tend:
-            clave_max = f"{max_r:.6f}"
+            tramo_actual = int(horas_dm // 24)
+            ultimo_tramo = prev.get("ultimo_tramo_alerta", 0)
 
-            # Alerta 24h (dispara cuando llega a 24h)
-            if horas_dm >= HORAS_BAJANDO_24H and prev.get("max_alerta_clave") != clave_max:
+            if tramo_actual >= 1 and tramo_actual > ultimo_tramo:
+                horas_alerta = tramo_actual * 24
+
+                if tramo_actual == 1:
+                    emoji = "📉"
+                elif tramo_actual == 2:
+                    emoji = "📉📉"
+                elif tramo_actual == 3:
+                    emoji = "📉📉📉"
+                else:
+                    emoji = "📉📉📉📉"
+
                 enviar_telegram(
-                    f"📉 {symbol} — 24H EN TENDENCIA BAJISTA\n"
+                    f"{emoji} {symbol} — {horas_alerta}H EN TENDENCIA BAJISTA\n"
                     f"━━━━━━━━━━━━━━━━━━━\n"
-                    f"📉 Hace 24h: ${max_r:.6f}\n"
+                    f"📉 Hace {horas_alerta}h: ${max_r:.6f}\n"
                     f"📊 Ahora:    ${precio:.6f}\n"
                     f"📊 RSI4h={r4} | RSI1D={r1d} | RSI1W={r1w}\n"
                     f"🕐 {ahora_lima}"
                 )
-                print(f"   📉 ALERTA 24h bajando (max ${max_r:.6f})", flush=True)
-                prev["max_alerta_clave"] = clave_max
-                enviadas.append(("BAJISTA-24h", symbol))
-                log_senal(symbol, "BAJISTA_24H", {
-                    "precio": precio,
-                    "max_reciente": max_r,
-                    "horas_desde_max": horas_dm,
-                    "rsi4h": rsi4h, "rsi1d": rsi1d, "rsi1w": rsi1w
-                })
-
-            # Alerta 48h (SOLO si ya disparó la 24h para este mismo máximo)
-            if (horas_dm >= HORAS_BAJANDO_48H
-                    and prev.get("max_alerta_clave") == clave_max
-                    and prev.get("max_alerta_48") != clave_max):
-                enviar_telegram(
-                    f"📉📉 {symbol} — 48H EN TENDENCIA BAJISTA\n"
-                    f"━━━━━━━━━━━━━━━━━━━\n"
-                    f"📉 Hace 48h: ${max_r:.6f}\n"
-                    f"📊 Ahora:    ${precio:.6f}\n"
-                    f"📊 RSI4h={r4} | RSI1D={r1d} | RSI1W={r1w}\n"
-                    f"🕐 {ahora_lima}"
-                )
-                print(f"   📉📉 ALERTA 48h bajando (max ${max_r:.6f})", flush=True)
-                prev["max_alerta_48"] = clave_max
-                enviadas.append(("BAJISTA-48h", symbol))
-                log_senal(symbol, "BAJISTA_48H", {
+                print(f"   {emoji} ALERTA {horas_alerta}h bajando (max ${max_r:.6f})", flush=True)
+                prev["ultimo_tramo_alerta"] = tramo_actual
+                enviadas.append((f"BAJISTA-{horas_alerta}h", symbol))
+                log_senal(symbol, f"BAJISTA_{horas_alerta}H", {
                     "precio": precio,
                     "max_reciente": max_r,
                     "horas_desde_max": horas_dm,
@@ -605,8 +589,7 @@ def main():
 
         # Reset cuando el precio supera el máximo
         if max_r is not None and precio >= max_r:
-            prev["max_alerta_clave"] = None
-            prev["max_alerta_48"] = None
+            prev["ultimo_tramo_alerta"] = 0
 
         estado[symbol] = {
             **prev,
