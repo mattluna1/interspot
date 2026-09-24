@@ -6,7 +6,7 @@ RECOLECTOR — interspot
 - Fetches: 15m, 1h, 4h, 1D, 1W
 - Sin 5m, sin velas crudas (solo pulso)
 - Retención: 12h de pulso
-- [NUEVO] Guarda máximo reciente + horas desde el máximo (ventana 48h)
+- Guarda máximo reciente + horas desde el máximo + tendencia bajista
 """
 
 import json
@@ -106,10 +106,11 @@ def actualizar_pulso(symbol, ahora):
     ultima_vela = velas_15m[-1]
 
     # ═══════════════════════════════════════════════
-    # [NUEVO] Máximo reciente y horas desde él (ventana 48h)
+    # Máximo reciente + ¿sigue bajando? (ventana 48h)
     # ═══════════════════════════════════════════════
     horas_desde_max = 0
     max_reciente = None
+    tendencia_bajista = False
     if len(velas_1h) >= 25:
         ventana = velas_1h[-48:] if len(velas_1h) >= 48 else velas_1h
         max_val = -1
@@ -120,6 +121,15 @@ def actualizar_pulso(symbol, ahora):
                 max_idx = i
         max_reciente = max_val
         horas_desde_max = len(ventana) - 1 - max_idx
+
+        # ¿Rebotó o sigue bajando? Comparar precio actual vs mínimo desde máximo
+        tramo = ventana[max_idx:]
+        if len(tramo) >= 2:
+            min_desde_max = min(v["l"] for v in tramo)
+            precio_actual = tramo[-1]["c"]
+            if min_desde_max > 0:
+                dist_al_min = (precio_actual - min_desde_max) / min_desde_max * 100
+                tendencia_bajista = (dist_al_min <= 1.0)
 
     def direccion(velas):
         if len(velas) < 2:
@@ -157,6 +167,7 @@ def actualizar_pulso(symbol, ahora):
         "dir1h": direccion(velas_1h) if velas_1h else "?",
         "horas_desde_max": horas_desde_max,
         "max_reciente": round(max_reciente, 8) if max_reciente is not None else None,
+        "tendencia_bajista": tendencia_bajista,
     }
 
     cache = cargar_cache(symbol)
@@ -178,10 +189,11 @@ def actualizar_pulso(symbol, ahora):
     rsi1d_str = f"{rsi1d:.1f}" if rsi1d is not None else "N/A"
     rsi1w_str = f"{rsi1w:.1f}" if rsi1w is not None else "N/A"
     max_str = f"${max_reciente:.6f}" if max_reciente is not None else "N/A"
+    tend_str = "bajando" if tendencia_bajista else "rebotó"
 
     print(
         f"   ✅ {symbol}: ${price:.6f} | RSI4h={rsi4h_str} | RSI1d={rsi1d_str} | RSI1w={rsi1w_str} | "
-        f"RVOL={sample['rvol15']:.2f} | max {max_str} hace {horas_desde_max}h | pulso={len(pulso)}",
+        f"RVOL={sample['rvol15']:.2f} | max {max_str} hace {horas_desde_max}h | {tend_str} | pulso={len(pulso)}",
         flush=True
     )
     return True
