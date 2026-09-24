@@ -38,3 +38,5 @@
 {"ts": "2026-09-24T15:18:25.047862+00:00", "symbol": "LTC", "tipo": "4H_OB_N2", "rsi4h": 72.98, "rsi1d": 76.69, "rsi1w": 68.47, "precio": 72.55}
 {"ts": "2026-09-24T16:37:08.373621+00:00", "symbol": "ETH", "tipo": "BAJISTA_48H", "precio": 2688.98, "max_reciente": 2784.55, "horas_desde_max": 68, "rsi4h": 51.51, "rsi1d": 62.74, "rsi1w": 64.79}
 {"ts": "2026-09-24T16:37:09.288113+00:00", "symbol": "SOL", "tipo": "1D_OB", "rsi4h": 57.93, "rsi1d": 65.65, "rsi1w": 63.62, "precio": 116.94}
+{"ts": "2026-09-24T18:20:37.228824+00:00", "symbol": "BNB", "tipo": "BAJISTA_48H", "precio": 779.1, "max_reciente": 805.4, "horas_desde_max": 70, "rsi4h": 52.98, "rsi1d": 60.15, "rsi1w": 63.3}
+{"ts": "2026-09-24T18:20:37.781500+00:00", "symbol": "LTC", "tipo": "4H_OB_N3", "rsi4h": 68.83, "rsi1d": 73.45, "rsi1w": 68.0, "precio": 71.96}
