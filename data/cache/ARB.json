@@ -1,24 +1,7 @@
 {
   "symbol": "ARB",
-  "updated_at": "2026-09-24T18:10:25.180086+00:00",
+  "updated_at": "2026-09-24T18:34:05.852624+00:00",
   "pulso": [
-    {
-      "ts": 1790230272,
-      "price": 0.21804,
-      "high15": 0.21827,
-      "low15": 0.21613,
-      "vol15": 181322.689,
-      "vol_usdt15": 39535.6,
-      "rvol15": 0.35,
-      "dir4h": "up",
-      "rsi15": 50.29,
-      "rsi1h": 42.84,
-      "rsi4h": 49.88,
-      "rsi1d": 69.16,
-      "rsi1w": 64.12,
-      "dir15": "up",
-      "dir1h": "up"
-    },
     {
       "ts": 1790231798,
       "price": 0.2179,
@@ -851,6 +834,26 @@
       "rsi1w": 64.2,
       "dir15": "up",
       "dir1h": "up",
+      "horas_desde_max": 37,
+      "max_reciente": 0.24994,
+      "tendencia_bajista": false
+    },
+    {
+      "ts": 1790274845,
+      "price": 0.21789,
+      "high15": 0.21913,
+      "low15": 0.21781,
+      "vol15": 203723.8055,
+      "vol_usdt15": 44389.38,
+      "rvol15": 0.14,
+      "dir4h": "up",
+      "rsi15": 51.79,
+      "rsi1h": 48.46,
+      "rsi4h": 50.08,
+      "rsi1d": 68.83,
+      "rsi1w": 64.1,
+      "dir15": "down",
+      "dir1h": "down",
       "horas_desde_max": 37,
       "max_reciente": 0.24994,
       "tendencia_bajista": false
