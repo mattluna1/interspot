@@ -112,7 +112,7 @@ def actualizar_pulso(symbol, ahora):
     max_reciente = None
     tendencia_bajista = False
     if len(velas_1h) >= 25:
-        ventana = velas_1h[-48:] if len(velas_1h) >= 48 else velas_1h
+        ventana = velas_1h[-72:] if len(velas_1h) >= 72 else velas_1h
         max_val = -1
         max_idx = 0
         for i, v in enumerate(ventana):
@@ -129,7 +129,7 @@ def actualizar_pulso(symbol, ahora):
             precio_actual = tramo[-1]["c"]
             if min_desde_max > 0:
                 dist_al_min = (precio_actual - min_desde_max) / min_desde_max * 100
-                tendencia_bajista = (dist_al_min <= 1.0)
+                tendencia_bajista = (dist_al_min <= 3.0)
 
     def direccion(velas):
         if len(velas) < 2:
