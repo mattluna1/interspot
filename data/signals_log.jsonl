@@ -41,3 +41,4 @@
 {"ts": "2026-09-24T18:20:37.228824+00:00", "symbol": "BNB", "tipo": "BAJISTA_48H", "precio": 779.1, "max_reciente": 805.4, "horas_desde_max": 70, "rsi4h": 52.98, "rsi1d": 60.15, "rsi1w": 63.3}
 {"ts": "2026-09-24T18:20:37.781500+00:00", "symbol": "LTC", "tipo": "4H_OB_N3", "rsi4h": 68.83, "rsi1d": 73.45, "rsi1w": 68.0, "precio": 71.96}
 {"ts": "2026-09-24T22:16:55.095195+00:00", "symbol": "HYPE", "tipo": "BAJISTA_24H", "precio": 92.465, "max_reciente": 97.558, "horas_desde_max": 42, "rsi4h": 48.1, "rsi1d": 63.69, "rsi1w": 67.78}
+{"ts": "2026-09-24T23:15:40.687259+00:00", "symbol": "AVAX", "tipo": "BAJISTA_48H", "precio": 10.133, "max_reciente": 11.316, "horas_desde_max": 48, "rsi4h": 45.61, "rsi1d": 64.84, "rsi1w": 56.98}
