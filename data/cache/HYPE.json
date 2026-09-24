@@ -1,24 +1,7 @@
 {
   "symbol": "HYPE",
-  "updated_at": "2026-09-24T20:58:33.760051+00:00",
+  "updated_at": "2026-09-24T21:15:03.490300+00:00",
   "pulso": [
-    {
-      "ts": 1790240385,
-      "price": 92.199,
-      "high15": 92.215,
-      "low15": 92.199,
-      "vol15": 29.8392,
-      "vol_usdt15": 2751.14,
-      "rvol15": 0.0,
-      "dir4h": "down",
-      "rsi15": 43.72,
-      "rsi1h": 40.52,
-      "rsi4h": 46.87,
-      "rsi1d": 63.85,
-      "rsi1w": 67.68,
-      "dir15": "down",
-      "dir1h": "down"
-    },
     {
       "ts": 1790241515,
       "price": 91.225,
@@ -902,6 +885,26 @@
       "dir15": "down",
       "dir1h": "down",
       "horas_desde_max": 40,
+      "max_reciente": 97.558,
+      "tendencia_bajista": false
+    },
+    {
+      "ts": 1790284503,
+      "price": 93.197,
+      "high15": 93.197,
+      "low15": 93.175,
+      "vol15": 25.7389,
+      "vol_usdt15": 2398.79,
+      "rvol15": 0.01,
+      "dir4h": "down",
+      "rsi15": 46.18,
+      "rsi1h": 49.55,
+      "rsi4h": 50.1,
+      "rsi1d": 65.41,
+      "rsi1w": 68.07,
+      "dir15": "up",
+      "dir1h": "down",
+      "horas_desde_max": 41,
       "max_reciente": 97.558,
       "tendencia_bajista": false
     }
