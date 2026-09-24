@@ -1,6 +1,6 @@
 {
   "symbol": "RAY",
-  "updated_at": "2026-09-24T15:55:45.060126+00:00",
+  "updated_at": "2026-09-24T16:01:11.108795+00:00",
   "pulso": [
     {
       "ts": 1790222913,
@@ -770,6 +770,26 @@
       "dir1h": "up",
       "horas_desde_max": 9,
       "max_reciente": 2.13
+    },
+    {
+      "ts": 1790265671,
+      "price": 2.0681,
+      "high15": 2.0839,
+      "low15": 2.068,
+      "vol15": 10285.757,
+      "vol_usdt15": 21271.97,
+      "rvol15": 0.41,
+      "dir4h": "down",
+      "rsi15": 57.12,
+      "rsi1h": 56.32,
+      "rsi4h": 61.2,
+      "rsi1d": 73.63,
+      "rsi1w": 80.9,
+      "dir15": "down",
+      "dir1h": "down",
+      "horas_desde_max": 10,
+      "max_reciente": 2.13,
+      "tendencia_bajista": false
     }
   ]
 }
