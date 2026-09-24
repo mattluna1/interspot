@@ -1,6 +1,6 @@
 {
   "symbol": "NEAR",
-  "updated_at": "2026-09-24T20:13:18.050410+00:00",
+  "updated_at": "2026-09-24T20:31:41.992818+00:00",
   "pulso": [
     {
       "ts": 1790238743,
@@ -878,6 +878,26 @@
       "horas_desde_max": 1,
       "max_reciente": 4.763,
       "tendencia_bajista": false
+    },
+    {
+      "ts": 1790281901,
+      "price": 4.628,
+      "high15": 4.659,
+      "low15": 4.621,
+      "vol15": 18895.0401,
+      "vol_usdt15": 87446.25,
+      "rvol15": 0.17,
+      "dir4h": "down",
+      "rsi15": 50.7,
+      "rsi1h": 57.62,
+      "rsi4h": 60.98,
+      "rsi1d": 81.37,
+      "rsi1w": 80.36,
+      "dir15": "down",
+      "dir1h": "down",
+      "horas_desde_max": 1,
+      "max_reciente": 4.763,
+      "tendencia_bajista": true
     }
   ]
 }
