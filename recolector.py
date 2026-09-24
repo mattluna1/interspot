@@ -106,23 +106,63 @@ def actualizar_pulso(symbol, ahora):
     ultima_vela = velas_15m[-1]
 
     # ═══════════════════════════════════════════════
-    # Máximo reciente + ¿sigue bajando? (ventana 48h)
+    # Máximo de referencia (considerando rebotes)
+    # Si un rebote NO supera el máximo anterior,
+    # el máximo original sigue válido.
+    # Si lo supera, se resetea al nuevo máximo.
     # ═══════════════════════════════════════════════
     horas_desde_max = 0
     max_reciente = None
     tendencia_bajista = False
+
     if len(velas_1h) >= 25:
         ventana = velas_1h[-72:] if len(velas_1h) >= 72 else velas_1h
-        max_val = -1
+
+        idx_inicio = 0
         max_idx = 0
-        for i, v in enumerate(ventana):
-            if v["c"] > max_val:
-                max_val = v["c"]
-                max_idx = i
+        max_val = ventana[0]["c"]
+        while idx_inicio < len(ventana) - 1:
+            # Máximo desde idx_inicio
+            max_val = ventana[idx_inicio]["c"]
+            max_idx = idx_inicio
+            for i in range(idx_inicio, len(ventana)):
+                if ventana[i]["c"] > max_val:
+                    max_val = ventana[i]["c"]
+                    max_idx = i
+
+            # Si el máximo es el último → no hay bajada
+            if max_idx >= len(ventana) - 1:
+                break
+
+            # Mínimo después del máximo
+            min_val = ventana[max_idx]["l"]
+            min_idx = max_idx
+            for i in range(max_idx, len(ventana)):
+                if ventana[i]["l"] < min_val:
+                    min_val = ventana[i]["l"]
+                    min_idx = i
+
+            # Máximo después del mínimo (pico del rebote)
+            max_post = ventana[min_idx]["c"]
+            max_post_idx = min_idx
+            for i in range(min_idx, len(ventana)):
+                if ventana[i]["c"] > max_post:
+                    max_post = ventana[i]["c"]
+                    max_post_idx = i
+
+            # ¿El rebote supera el máximo anterior?
+            if max_post > max_val:
+                # Sí → reiniciar desde el pico del rebote
+                idx_inicio = max_post_idx
+                continue
+            else:
+                # No → el máximo original sigue válido
+                break
+
         max_reciente = max_val
         horas_desde_max = len(ventana) - 1 - max_idx
 
-        # ¿Rebotó o sigue bajando? Comparar precio actual vs mínimo desde máximo
+        # ¿Sigue bajando? Precio pegado al mínimo desde ese máximo
         tramo = ventana[max_idx:]
         if len(tramo) >= 2:
             min_desde_max = min(v["l"] for v in tramo)
