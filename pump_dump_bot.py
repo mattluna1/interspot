@@ -3,8 +3,8 @@
 """
 PUMP/DUMP BOT — interspot
 - Lee CoinBeacon /pumping/events cada 5 min
-- Filtra por monedas configuradas
-- Envía alertas a Telegram
+- Solo pump_5m, pump_10m, dump_5m, dump_10m
+- Filtros: setup ≥ 5, volumen confirmado, % mínimo 3
 """
 
 import json
@@ -21,8 +21,10 @@ SYMBOLS = [
 ]
 
 # Filtros
-SETUP_SCORE_MIN = 3.0            # ignorar eventos con score < esto
-REQUIERE_VOL_CONFIRMED = False   # True = solo los que tienen vol confirmado
+SETUP_SCORE_MIN = 5.0            # ignorar eventos con score < esto
+REQUIERE_VOL_CONFIRMED = True    # True = solo los que tienen vol confirmado
+PCT_MIN_PUMP = 3.0               # % mínimo para pump
+PCT_MIN_DUMP = -3.0              # % mínimo para dump
 
 STATE_FILE = Path("data/pump_dump_state.json")
 SIGNALS_LOG = Path("data/pump_dump_log.jsonl")
@@ -88,7 +90,7 @@ def consultar_pumping_events():
         print("⚠️ COINBEACON_TOKEN4 no configurado en secrets", flush=True)
         return []
 
-    types = "pump_5m,pump_10m,24h_low,dump_10m,dump_5m,24h_high"
+    types = "pump_5m,pump_10m,dump_5m,dump_10m"
     url = f"{COINBEACON_URL}?exchange=binance&types={types}&pair=USDT&limit=500"
 
     headers = {
@@ -117,12 +119,6 @@ def clasificar_evento(ev):
     elif "dump" in tipo:
         emoji = "💥"
         tipo_str = f"DUMP {ev.get('window','')}"
-    elif tipo == "24h_low":
-        emoji = "📉"
-        tipo_str = "MÍNIMO 24H"
-    elif tipo == "24h_high":
-        emoji = "📈"
-        tipo_str = "MÁXIMO 24H"
     else:
         emoji = "⚡"
         tipo_str = tipo
@@ -139,7 +135,7 @@ def main():
     print("=" * 70, flush=True)
     print("🚀 PUMP/DUMP BOT — CoinBeacon events", flush=True)
     print(f"   {len(SYMBOLS)} monedas: {', '.join(SYMBOLS)}", flush=True)
-    print(f"   SetupScore mínimo: {SETUP_SCORE_MIN}", flush=True)
+    print(f"   Setup mínimo: {SETUP_SCORE_MIN} | Vol confirmed: {REQUIERE_VOL_CONFIRMED} | % min: {PCT_MIN_PUMP}", flush=True)
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
 
@@ -184,6 +180,12 @@ def main():
             continue
 
         pct = ev.get("pct", 0)
+        # Filtro por % mínimo
+        if "pump" in tipo and pct < PCT_MIN_PUMP:
+            continue
+        if "dump" in tipo and pct > PCT_MIN_DUMP:
+            continue
+
         price = ev.get("price", 0)
         prev_price = ev.get("prevPrice", 0)
         vol_conf = ev.get("volConfirmed", False)
