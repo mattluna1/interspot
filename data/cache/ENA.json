@@ -1,27 +1,7 @@
 {
   "symbol": "ENA",
-  "updated_at": "2026-09-25T20:39:46.376588+00:00",
+  "updated_at": "2026-09-25T20:52:15.620911+00:00",
   "pulso": [
-    {
-      "ts": 1790326149,
-      "price": 0.22256,
-      "high15": 0.22293,
-      "low15": 0.22236,
-      "vol15": 83059.73,
-      "vol_usdt15": 18485.77,
-      "rvol15": 0.19,
-      "dir4h": "up",
-      "rsi15": 50.37,
-      "rsi1h": 54.63,
-      "rsi4h": 62.24,
-      "rsi1d": 72.72,
-      "rsi1w": 61.86,
-      "dir15": "down",
-      "dir1h": "up",
-      "horas_desde_max": 8,
-      "max_reciente": 0.23486,
-      "tendencia_bajista": true
-    },
     {
       "ts": 1790326777,
       "price": 0.22245,
@@ -940,6 +920,26 @@
       "dir1h": "up",
       "horas_desde_max": 0,
       "max_reciente": 0.26421,
+      "tendencia_bajista": false
+    },
+    {
+      "ts": 1790369535,
+      "price": 0.26448,
+      "high15": 0.26649,
+      "low15": 0.26303,
+      "vol15": 278417.03,
+      "vol_usdt15": 73635.74,
+      "rvol15": 0.19,
+      "dir4h": "up",
+      "rsi15": 64.55,
+      "rsi1h": 81.49,
+      "rsi4h": 79.44,
+      "rsi1d": 79.91,
+      "rsi1w": 66.46,
+      "dir15": "down",
+      "dir1h": "up",
+      "horas_desde_max": 0,
+      "max_reciente": 0.26439,
       "tendencia_bajista": false
     }
   ]
