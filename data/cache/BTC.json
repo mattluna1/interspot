@@ -1,27 +1,7 @@
 {
   "symbol": "BTC",
-  "updated_at": "2026-09-25T19:55:06.793442+00:00",
+  "updated_at": "2026-09-25T20:07:55.729035+00:00",
   "pulso": [
-    {
-      "ts": 1790323002,
-      "price": 84040.1,
-      "high15": 84040.2,
-      "low15": 83888.0,
-      "vol15": 117.9607,
-      "vol_usdt15": 9913428.47,
-      "rvol15": 3.07,
-      "dir4h": "down",
-      "rsi15": 44.98,
-      "rsi1h": 44.7,
-      "rsi4h": 50.36,
-      "rsi1d": 63.11,
-      "rsi1w": 62.12,
-      "dir15": "up",
-      "dir1h": "down",
-      "horas_desde_max": 51,
-      "max_reciente": 87169.8,
-      "tendencia_bajista": true
-    },
     {
       "ts": 1790323946,
       "price": 84106.7,
@@ -939,6 +919,26 @@
       "dir15": "up",
       "dir1h": "up",
       "horas_desde_max": 63,
+      "max_reciente": 87169.8,
+      "tendencia_bajista": true
+    },
+    {
+      "ts": 1790366875,
+      "price": 83955.1,
+      "high15": 84048.0,
+      "low15": 83943.2,
+      "vol15": 10.181,
+      "vol_usdt15": 854743.32,
+      "rvol15": 0.21,
+      "dir4h": "down",
+      "rsi15": 48.57,
+      "rsi1h": 44.93,
+      "rsi4h": 49.47,
+      "rsi1d": 62.62,
+      "rsi1w": 62.05,
+      "dir15": "down",
+      "dir1h": "down",
+      "horas_desde_max": 64,
       "max_reciente": 87169.8,
       "tendencia_bajista": true
     }
