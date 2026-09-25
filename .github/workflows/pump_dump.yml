@@ -1,0 +1,66 @@
+name: PUMP DUMP BOT
+
+permissions:
+  contents: write
+
+on:
+  schedule:
+    # Cada 5 min, desfasado del recolector (que corre en :2,:7,:12...)
+    - cron: '4,9,14,19,24,29,34,39,44,49,54,59 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: repo-main-push
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check syntax
+        run: python -m py_compile pump_dump_bot.py
+
+      - name: Run Pump Dump Bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COINBEACON_TOKEN4: ${{ secrets.COINBEACON_TOKEN4 }}
+        run: python pump_dump_bot.py
+
+      - name: Commit state
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if [ -f data/pump_dump_state.json ]; then
+            git add data/pump_dump_state.json
+          fi
+          if [ -f data/pump_dump_log.jsonl ]; then
+            git add data/pump_dump_log.jsonl
+          fi
+
+          if git diff --staged --quiet; then
+            echo "📭 Sin cambios"
+          else
+            git commit -m "pump_dump: update [skip ci]"
+
+            for i in 1 2 3; do
+              git pull --rebase origin main && break
+              sleep 5
+            done
+
+            for i in 1 2 3; do
+              git push && echo "✅ Push OK" && break
+              git pull --rebase origin main || true
+              sleep 10
+            done
+          fi
