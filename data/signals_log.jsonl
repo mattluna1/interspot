@@ -48,3 +48,4 @@
 {"ts": "2026-09-25T06:22:09.420664+00:00", "symbol": "ARB", "tipo": "BAJISTA_48H", "precio": 0.21604, "max_reciente": 0.24994, "horas_desde_max": 49, "rsi4h": 48.61, "rsi1d": 68.23, "rsi1w": 63.9}
 {"ts": "2026-09-25T08:17:42.233475+00:00", "symbol": "SEI", "tipo": "4H_OB_N1", "rsi4h": 72.34, "rsi1d": 71.97, "rsi1w": 53.03, "precio": 0.0652}
 {"ts": "2026-09-25T08:17:43.412739+00:00", "symbol": "LINK", "tipo": "1D_OB", "rsi4h": 66.53, "rsi1d": 65.0, "rsi1w": 67.0, "precio": 13.599}
+{"ts": "2026-09-25T10:17:11.155189+00:00", "symbol": "LINK", "tipo": "4H_OB_N1", "rsi4h": 71.0, "rsi1d": 67.18, "rsi1w": 68.23, "precio": 13.996}
