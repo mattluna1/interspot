@@ -1,24 +1,7 @@
 {
   "symbol": "AVAX",
-  "updated_at": "2026-09-25T00:38:07.733420+00:00",
+  "updated_at": "2026-09-25T00:52:18.342557+00:00",
   "pulso": [
-    {
-      "ts": 1790253506,
-      "price": 10.002,
-      "high15": 10.068,
-      "low15": 9.984,
-      "vol15": 10811.5922,
-      "vol_usdt15": 108137.55,
-      "rvol15": 1.3,
-      "dir4h": "down",
-      "rsi15": 30.93,
-      "rsi1h": 31.81,
-      "rsi4h": 43.03,
-      "rsi1d": 64.38,
-      "rsi1w": 56.3,
-      "dir15": "down",
-      "dir1h": "down"
-    },
     {
       "ts": 1790254427,
       "price": 10.08,
@@ -963,6 +946,26 @@
       "rsi1w": 57.47,
       "dir15": "down",
       "dir1h": "up",
+      "horas_desde_max": 49,
+      "max_reciente": 11.316,
+      "tendencia_bajista": true
+    },
+    {
+      "ts": 1790297538,
+      "price": 10.184,
+      "high15": 10.217,
+      "low15": 10.184,
+      "vol15": 1397.4468,
+      "vol_usdt15": 14231.6,
+      "rvol15": 0.1,
+      "dir4h": "down",
+      "rsi15": 41.57,
+      "rsi1h": 43.14,
+      "rsi4h": 46.4,
+      "rsi1d": 65.48,
+      "rsi1w": 57.24,
+      "dir15": "down",
+      "dir1h": "down",
       "horas_desde_max": 49,
       "max_reciente": 11.316,
       "tendencia_bajista": true
