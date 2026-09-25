@@ -3,8 +3,8 @@
 """
 PUMP/DUMP BOT — interspot
 - Lee CoinBeacon /pumping/events cada 5 min
-- Solo pump_5m, pump_10m, dump_5m, dump_10m
-- Filtros: setup, volumen, % mínimo
+- Solo pump_10m y dump_10m
+- Filtro: % mínimo 3%
 """
 
 import json
@@ -21,8 +21,6 @@ SYMBOLS = [
 ]
 
 # Filtros
-SETUP_SCORE_MIN = 3.0
-REQUIERE_VOL_CONFIRMED = False
 PCT_MIN_PUMP = 3.0
 PCT_MIN_DUMP = -3.0
 
@@ -90,7 +88,7 @@ def consultar_pumping_events():
         print("⚠️ COINBEACON_TOKEN4 no configurado", flush=True)
         return []
 
-    types = "pump_5m,pump_10m,dump_5m,dump_10m"
+    types = "pump_10m,dump_10m"
     url = f"{COINBEACON_URL}?exchange=binance&types={types}&pair=USDT&limit=500"
 
     headers = {
@@ -115,10 +113,10 @@ def clasificar_evento(ev):
 
     if "pump" in tipo:
         emoji = "🚀"
-        tipo_str = f"PUMP {ev.get('window','')}"
+        tipo_str = "PUMP 10m"
     elif "dump" in tipo:
         emoji = "💥"
-        tipo_str = f"DUMP {ev.get('window','')}"
+        tipo_str = "DUMP 10m"
     else:
         emoji = "⚡"
         tipo_str = tipo
@@ -133,9 +131,9 @@ def clasificar_evento(ev):
 
 def main():
     print("=" * 70, flush=True)
-    print("🚀 PUMP/DUMP BOT — CoinBeacon events", flush=True)
+    print("🚀 PUMP/DUMP BOT — CoinBeacon (10m)", flush=True)
     print(f"   {len(SYMBOLS)} monedas: {', '.join(SYMBOLS)}", flush=True)
-    print(f"   Setup mínimo: {SETUP_SCORE_MIN} | Vol: {REQUIERE_VOL_CONFIRMED} | % min: {PCT_MIN_PUMP}", flush=True)
+    print(f"   % min: {PCT_MIN_PUMP}", flush=True)
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
 
@@ -171,20 +169,13 @@ def main():
         if clave in vistos:
             continue
 
-        # Extraer datos PRIMERO
         pct = ev.get("pct", 0)
-        setup = ev.get("setupScore", 0)
-        vol_ok = ev.get("volConfirmed", False)
         rvol = ev.get("rvol", 0)
+        vol_ok = ev.get("volConfirmed", False)
 
-        # Print diagnóstico
-        print(f"   → {symbol_base} {tipo}: pct={pct:+.2f}% setup={setup:.1f} vol={vol_ok} rvol={rvol:.2f}", flush=True)
+        print(f"   → {symbol_base} {tipo}: pct={pct:+.2f}% vol={vol_ok} rvol={rvol:.2f}", flush=True)
 
-        # Filtros
-        if setup < SETUP_SCORE_MIN:
-            continue
-        if REQUIERE_VOL_CONFIRMED and not vol_ok:
-            continue
+        # Filtro por % mínimo
         if "pump" in tipo and pct < PCT_MIN_PUMP:
             continue
         if "dump" in tipo and pct > PCT_MIN_DUMP:
@@ -208,7 +199,6 @@ def main():
             f"📊 Cambio: {pct:+.2f}%\n"
             f"📊 Previo: ${prev_price:.8f}\n"
             f"{vol_txt}\n"
-            f"🎯 Setup: {setup:.1f}/10\n"
             f"🧭 {bias.upper()} | {clasif}\n"
             f"💰 Vol 24h: ${quote_vol:,.0f}\n"
             f"🕐 {ts_str} Lima\n"
@@ -226,7 +216,6 @@ def main():
                 "price": price,
                 "rvol": rvol,
                 "vol_conf": vol_ok,
-                "setup": setup,
                 "bias": bias,
                 "clasif": clasif,
             })
