@@ -1,8 +1,8 @@
 {
   "SUI": {
-    "rsi4h": 71.22,
-    "rsi1d": 75.09,
-    "rsi1w": 57.56,
+    "rsi4h": 75.04,
+    "rsi1d": 75.73,
+    "rsi1w": 58.11,
     "cruces": {
       "4h_sale_ob": 1790162048,
       "4h_entra_ob": 1790161077
@@ -21,9 +21,9 @@
     "1w_lado": "esperando_OB"
   },
   "ARB": {
-    "rsi4h": 51.93,
-    "rsi1d": 69.51,
-    "rsi1w": 64.38,
+    "rsi4h": 56.08,
+    "rsi1d": 70.56,
+    "rsi1w": 64.98,
     "cruces": {
       "4h_entra_ob": 1790141924,
       "4h_sale_ob": 1790143856,
@@ -44,9 +44,9 @@
     "ultimo_tramo_alerta": 2
   },
   "RAY": {
-    "rsi4h": 57.23,
-    "rsi1d": 73.75,
-    "rsi1w": 80.96,
+    "rsi4h": 58.79,
+    "rsi1d": 74.25,
+    "rsi1w": 81.24,
     "cruces": {
       "1d_entra_ob": 1790174976,
       "4h_entra_ob": 1790189337,
@@ -66,9 +66,9 @@
     "1w_lado": "esperando_OS"
   },
   "NEAR": {
-    "rsi4h": 64.31,
-    "rsi1d": 83.41,
-    "rsi1w": 81.67,
+    "rsi4h": 68.43,
+    "rsi1d": 84.23,
+    "rsi1w": 82.31,
     "cruces": {
       "4h_entra_ob": 1790175596,
       "4h_sale_ob": 1790177594
@@ -88,9 +88,9 @@
     "ultimo_tramo_alerta": 0
   },
   "UNI": {
-    "rsi4h": 58.19,
-    "rsi1d": 80.7,
-    "rsi1w": 75.3,
+    "rsi4h": 61.24,
+    "rsi1d": 81.44,
+    "rsi1w": 75.73,
     "cruces": {
       "4h_sale_ob": 1790153937
     },
@@ -108,9 +108,9 @@
     "1w_lado": "esperando_OS"
   },
   "ENA": {
-    "rsi4h": 66.47,
-    "rsi1d": 75.43,
-    "rsi1w": 63.44,
+    "rsi4h": 74.2,
+    "rsi1d": 77.36,
+    "rsi1w": 64.69,
     "cruces": {
       "1d_entra_ob": 1790186057
     },
@@ -120,8 +120,8 @@
       "1w_ext_alto": false,
       "1w_ext_bajo": false
     },
-    "4h_ob_lado": "fuera",
-    "4h_ob_nivel": 0,
+    "4h_ob_lado": "dentro",
+    "4h_ob_nivel": 2,
     "4h_os_lado": "fuera",
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
@@ -129,9 +129,9 @@
     "ultimo_tramo_alerta": 0
   },
   "APT": {
-    "rsi4h": 62.08,
-    "rsi1d": 71.97,
-    "rsi1w": 48.03,
+    "rsi4h": 64.81,
+    "rsi1d": 72.86,
+    "rsi1w": 48.56,
     "cruces": {
       "4h_sale_ob": 1790169009,
       "4h_entra_ob": 1790164521
@@ -147,12 +147,13 @@
     "4h_os_lado": "fuera",
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
-    "1w_lado": "esperando_OB"
+    "1w_lado": "esperando_OB",
+    "ultimo_tramo_alerta": 0
   },
   "AVAX": {
-    "rsi4h": 52.26,
-    "rsi1d": 68.71,
-    "rsi1w": 58.79,
+    "rsi4h": 53.69,
+    "rsi1d": 69.14,
+    "rsi1w": 59.19,
     "cruces": {},
     "estado_extremo": {
       "1d_ext_alto": false,
@@ -169,9 +170,9 @@
     "ultimo_tramo_alerta": 2
   },
   "INJ": {
-    "rsi4h": 57.26,
-    "rsi1d": 68.65,
-    "rsi1w": 71.0,
+    "rsi4h": 60.41,
+    "rsi1d": 70.94,
+    "rsi1w": 71.64,
     "cruces": {
       "1w_entra_ob": 1790175596,
       "1d_entra_ob": 1790174976
@@ -191,9 +192,9 @@
     "ultimo_tramo_alerta": 0
   },
   "ZEC": {
-    "rsi4h": 55.24,
-    "rsi1d": 73.99,
-    "rsi1w": 79.74,
+    "rsi4h": 61.57,
+    "rsi1d": 75.52,
+    "rsi1w": 80.3,
     "cruces": {
       "1d_entra_ob": 1790205069
     },
@@ -211,9 +212,9 @@
     "1w_lado": "esperando_OS"
   },
   "SEI": {
-    "rsi4h": 71.3,
-    "rsi1d": 72.98,
-    "rsi1w": 53.86,
+    "rsi4h": 77.82,
+    "rsi1d": 74.45,
+    "rsi1w": 55.14,
     "cruces": {
       "4h_entra_ob": 1790145393,
       "4h_sale_ob": 1790151088,
@@ -234,9 +235,9 @@
     "ultimo_tramo_alerta": 0
   },
   "DASH": {
-    "rsi4h": 55.47,
-    "rsi1d": 62.36,
-    "rsi1w": 61.31,
+    "rsi4h": 61.5,
+    "rsi1d": 64.5,
+    "rsi1w": 62.08,
     "cruces": {},
     "estado_extremo": {
       "1d_ext_alto": false,
@@ -253,10 +254,10 @@
     "ultimo_tramo_alerta": 0
   },
   "_BTC": {
-    "rsi4h": 50.19,
-    "rsi1d": 63.14,
-    "rsi15": 40.49,
-    "rsi1h": 44.84
+    "rsi4h": 53.33,
+    "rsi1d": 64.54,
+    "rsi15": 48.83,
+    "rsi1h": 51.94
   },
   "WLD": {
     "4h_ob_lado": "fuera",
@@ -265,9 +266,9 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OB",
     "1w_lado": "esperando_OB",
-    "rsi4h": 55.73,
-    "rsi1d": 58.19,
-    "rsi1w": 53.0
+    "rsi4h": 59.81,
+    "rsi1d": 59.65,
+    "rsi1w": 53.71
   },
   "ETH": {
     "4h_ob_lado": "fuera",
@@ -276,21 +277,21 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 50.97,
-    "rsi1d": 62.76,
-    "rsi1w": 64.78,
+    "rsi4h": 55.79,
+    "rsi1d": 64.09,
+    "rsi1w": 65.36,
     "ultimo_tramo_alerta": 2
   },
   "LINK": {
-    "4h_ob_lado": "fuera",
-    "4h_ob_nivel": 0,
+    "4h_ob_lado": "dentro",
+    "4h_ob_nivel": 2,
     "4h_os_lado": "fuera",
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 67.02,
-    "rsi1d": 66.63,
-    "rsi1w": 67.94,
+    "rsi4h": 70.74,
+    "rsi1d": 67.42,
+    "rsi1w": 68.37,
     "ultimo_tramo_alerta": 0
   },
   "SOL": {
@@ -300,9 +301,9 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 59.15,
-    "rsi1d": 67.27,
-    "rsi1w": 64.38,
+    "rsi4h": 66.12,
+    "rsi1d": 68.66,
+    "rsi1w": 65.09,
     "ultimo_tramo_alerta": 0
   },
   "BNB": {
@@ -312,9 +313,9 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OB",
     "1w_lado": "esperando_OB",
-    "rsi4h": 50.13,
-    "rsi1d": 59.08,
-    "rsi1w": 62.94,
+    "rsi4h": 51.7,
+    "rsi1d": 59.62,
+    "rsi1w": 63.13,
     "ultimo_tramo_alerta": 2
   },
   "LTC": {
@@ -324,9 +325,9 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 60.37,
-    "rsi1d": 68.86,
-    "rsi1w": 66.45,
+    "rsi4h": 62.24,
+    "rsi1d": 70.12,
+    "rsi1w": 66.92,
     "ultimo_tramo_alerta": 0
   },
   "STX": {
@@ -334,11 +335,11 @@
     "4h_ob_nivel": 0,
     "4h_os_lado": "fuera",
     "4h_os_nivel": 0,
-    "1d_lado": "esperando_OB",
+    "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 57.54,
-    "rsi1d": 64.92,
-    "rsi1w": 65.24
+    "rsi4h": 59.6,
+    "rsi1d": 65.62,
+    "rsi1w": 65.66
   },
   "HYPE": {
     "4h_ob_lado": "fuera",
@@ -347,9 +348,9 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 47.98,
-    "rsi1d": 63.35,
-    "rsi1w": 67.72,
+    "rsi4h": 51.66,
+    "rsi1d": 66.09,
+    "rsi1w": 68.2,
     "ultimo_tramo_alerta": 2
   }
 }
