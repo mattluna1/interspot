@@ -74,3 +74,5 @@
 {"ts": "2026-09-25T00:21:04.616303+00:00", "symbol": "XLM", "tipo": "24h_high", "pct": 3.09, "price": 0.2099, "rvol": 2.19, "vol_conf": true, "setup": 6.7, "bias": "bullish", "clasif": "continuation"}
 {"ts": "2026-09-25T00:21:05.172507+00:00", "symbol": "XRP", "tipo": "24h_high", "pct": 1.55, "price": 1.5261, "rvol": 3.56, "vol_conf": true, "setup": 8.1, "bias": "bullish", "clasif": "continuation"}
 {"ts": "2026-09-25T00:21:05.713423+00:00", "symbol": "QNT", "tipo": "24h_high", "pct": 15.54, "price": 82.91, "rvol": 1.17, "vol_conf": false, "setup": 7.2, "bias": "bullish", "clasif": "continuation"}
+{"ts": "2026-09-25T00:49:09.350802+00:00", "symbol": "SAGA", "tipo": "dump_10m", "pct": -24.25, "price": 0.05914, "rvol": 3.65, "vol_conf": true, "bias": "bullish", "clasif": "continuation"}
+{"ts": "2026-09-25T00:49:09.757434+00:00", "symbol": "SAGA", "tipo": "dump_10m", "pct": -13.78, "price": 0.06725, "rvol": 4.86, "vol_conf": true, "bias": "bullish", "clasif": "continuation"}
