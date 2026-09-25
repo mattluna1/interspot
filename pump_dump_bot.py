@@ -3,10 +3,11 @@
 """
 PUMP/DUMP BOT — interspot
 - Lee CoinBeacon /pumping/events cada 5 min
-- Solo pump_10m y dump_10m
-- Cooldown 30 min por symbol+tipo+bias+clasif
+- Solo pump_5m y dump_5m
+- Cooldown 15 min por symbol+tipo+bias+clasif
 - Rompe cooldown si cambia bias, clasif o tipo
-- Filtro % mínimo 3%
+- Filtro: % mínimo 2.5% + volumen confirmado
+- Rotación de log a 1 MB
 """
 
 import json
@@ -23,9 +24,9 @@ SYMBOLS = [
 ]
 
 # Filtros
-PCT_MIN_PUMP = 3.0
-PCT_MIN_DUMP = -3.0
-COOLDOWN_MIN = 30
+PCT_MIN_PUMP = 2.5
+PCT_MIN_DUMP = -2.5
+COOLDOWN_MIN = 15
 
 STATE_FILE = Path("data/pump_dump_state.json")
 SIGNALS_LOG = Path("data/pump_dump_log.jsonl")
@@ -64,6 +65,15 @@ def guardar_estado(estado):
 
 def log_senal(registro):
     SIGNALS_LOG.parent.mkdir(exist_ok=True)
+    # Rotación: si supera 1 MB, conservar solo últimas 1000 líneas
+    if SIGNALS_LOG.exists() and SIGNALS_LOG.stat().st_size > 1_000_000:
+        try:
+            with SIGNALS_LOG.open("r", encoding="utf-8") as f:
+                lineas = f.readlines()
+            with SIGNALS_LOG.open("w", encoding="utf-8") as f:
+                f.writelines(lineas[-1000:])
+        except Exception:
+            pass
     with SIGNALS_LOG.open("a", encoding="utf-8") as f:
         f.write(json.dumps(registro, ensure_ascii=False) + "\n")
 
@@ -95,7 +105,7 @@ def consultar_pumping_events():
         print("⚠️ COINBEACON_TOKEN4 no configurado", flush=True)
         return []
 
-    types = "pump_10m,dump_10m"
+    types = "pump_5m,dump_5m"
     url = f"{COINBEACON_URL}?exchange=binance&types={types}&pair=USDT&limit=500"
 
     headers = {
@@ -120,10 +130,10 @@ def clasificar_evento(ev):
 
     if "pump" in tipo:
         emoji = "🚀"
-        tipo_str = "PUMP 10m"
+        tipo_str = "PUMP 5m"
     elif "dump" in tipo:
         emoji = "💥"
-        tipo_str = "DUMP 10m"
+        tipo_str = "DUMP 5m"
     else:
         emoji = "⚡"
         tipo_str = tipo
@@ -138,7 +148,7 @@ def clasificar_evento(ev):
 
 def main():
     print("=" * 70, flush=True)
-    print("🚀 PUMP/DUMP BOT — CoinBeacon (10m)", flush=True)
+    print("🚀 PUMP/DUMP BOT — CoinBeacon (5m)", flush=True)
     print(f"   {len(SYMBOLS)} monedas: {', '.join(SYMBOLS)}", flush=True)
     print(f"   % min: {PCT_MIN_PUMP} | Cooldown: {COOLDOWN_MIN} min", flush=True)
     print("=" * 70, flush=True)
