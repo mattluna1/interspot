@@ -4,7 +4,9 @@
 PUMP/DUMP BOT — interspot
 - Lee CoinBeacon /pumping/events cada 5 min
 - Solo pump_10m y dump_10m
-- Filtro: % mínimo 3%
+- Cooldown 30 min por symbol+tipo+bias+clasif
+- Rompe cooldown si cambia bias, clasif o tipo
+- Filtro % mínimo 3%
 """
 
 import json
@@ -23,6 +25,7 @@ SYMBOLS = [
 # Filtros
 PCT_MIN_PUMP = 3.0
 PCT_MIN_DUMP = -3.0
+COOLDOWN_MIN = 30
 
 STATE_FILE = Path("data/pump_dump_state.json")
 SIGNALS_LOG = Path("data/pump_dump_log.jsonl")
@@ -38,15 +41,19 @@ def hora_lima():
 
 def cargar_estado():
     if not STATE_FILE.exists():
-        return {"vistos": []}
+        return {"vistos": [], "cooldown": {}}
     try:
         with STATE_FILE.open("r", encoding="utf-8") as f:
             data = json.load(f)
-        if isinstance(data, dict) and "vistos" in data:
+        if isinstance(data, dict):
+            if "vistos" not in data:
+                data["vistos"] = []
+            if "cooldown" not in data:
+                data["cooldown"] = {}
             return data
     except Exception:
         pass
-    return {"vistos": []}
+    return {"vistos": [], "cooldown": {}}
 
 
 def guardar_estado(estado):
@@ -133,12 +140,13 @@ def main():
     print("=" * 70, flush=True)
     print("🚀 PUMP/DUMP BOT — CoinBeacon (10m)", flush=True)
     print(f"   {len(SYMBOLS)} monedas: {', '.join(SYMBOLS)}", flush=True)
-    print(f"   % min: {PCT_MIN_PUMP}", flush=True)
+    print(f"   % min: {PCT_MIN_PUMP} | Cooldown: {COOLDOWN_MIN} min", flush=True)
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
 
     estado = cargar_estado()
     vistos = set(estado.get("vistos", []))
+    cooldowns = estado.get("cooldown", {})
 
     print("\n📡 Consultando CoinBeacon...", flush=True)
     eventos = consultar_pumping_events()
@@ -158,22 +166,33 @@ def main():
     print(f"   Eventos nuestras monedas: {len(eventos_filtrados)}", flush=True)
 
     enviadas = 0
+    ahora_ts = datetime.now(timezone.utc).timestamp()
 
     for ev in eventos_filtrados:
         symbol_full = ev.get("symbol", "")
         symbol_base = symbol_full.replace("USDT", "")
         tipo = ev.get("type", "")
         spotted_at = ev.get("spottedAt", 0)
-
-        clave = f"{symbol_full}_{tipo}_{spotted_at}"
-        if clave in vistos:
-            continue
-
         pct = ev.get("pct", 0)
         rvol = ev.get("rvol", 0)
         vol_ok = ev.get("volConfirmed", False)
+        bias = ev.get("bias", "")
+        clasif = ev.get("classification", "")
 
-        print(f"   → {symbol_base} {tipo}: pct={pct:+.2f}% vol={vol_ok} rvol={rvol:.2f}", flush=True)
+        print(f"   → {symbol_base} {tipo}: pct={pct:+.2f}% vol={vol_ok} rvol={rvol:.2f} | {bias}/{clasif}", flush=True)
+
+        # Clave de evento único (para no procesar el mismo dos veces)
+        clave_evento = f"{symbol_full}_{tipo}_{spotted_at}"
+        if clave_evento in vistos:
+            continue
+
+        # Clave de cooldown: symbol+tipo+bias+clasif
+        # Si cambia bias o clasif → clave distinta → no hay cooldown → alerta
+        clave_cooldown = f"{symbol_base}_{tipo}_{bias}_{clasif}"
+        ultimo = cooldowns.get(clave_cooldown, 0)
+        if ahora_ts - ultimo < COOLDOWN_MIN * 60:
+            print(f"      ⏸️ Cooldown activo ({int((ahora_ts-ultimo)/60)} min)", flush=True)
+            continue
 
         # Filtro por % mínimo
         if "pump" in tipo and pct < PCT_MIN_PUMP:
@@ -183,8 +202,6 @@ def main():
 
         price = ev.get("price", 0)
         prev_price = ev.get("prevPrice", 0)
-        bias = ev.get("bias", "")
-        clasif = ev.get("classification", "")
         quote_vol = ev.get("quoteVolume24h", 0)
 
         emoji, tipo_str, vol_txt = clasificar_evento(ev)
@@ -207,7 +224,8 @@ def main():
 
         if enviar_telegram(msg):
             enviadas += 1
-            vistos.add(clave)
+            vistos.add(clave_evento)
+            cooldowns[clave_cooldown] = ahora_ts
             log_senal({
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "symbol": symbol_base,
@@ -221,11 +239,18 @@ def main():
             })
             print(f"   {emoji} {symbol_base} {tipo} {pct:+.2f}% → enviado", flush=True)
 
+    # Limitar historial
     todos_vistos = list(vistos)
     if len(todos_vistos) > 3000:
         todos_vistos = todos_vistos[-3000:]
 
+    # Limitar cooldowns a los últimos 200
+    if len(cooldowns) > 200:
+        cooldowns_ordenados = sorted(cooldowns.items(), key=lambda x: x[1], reverse=True)[:200]
+        cooldowns = dict(cooldowns_ordenados)
+
     estado["vistos"] = todos_vistos
+    estado["cooldown"] = cooldowns
     estado["updated_at"] = datetime.now(timezone.utc).isoformat()
     guardar_estado(estado)
 
