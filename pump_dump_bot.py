@@ -4,7 +4,7 @@
 PUMP/DUMP BOT — interspot
 - Lee CoinBeacon /pumping/events cada 5 min
 - Solo pump_5m, pump_10m, dump_5m, dump_10m
-- Filtros: setup ≥ 5, volumen confirmado, % mínimo 3
+- Filtros: setup, volumen, % mínimo
 """
 
 import json
@@ -14,17 +14,17 @@ import urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-# Monedas a seguir (sin USDT)
+# Monedas a seguir
 SYMBOLS = [
     "AAVE", "JST", "ACE", "ONDO", "XLM", "BONK",
     "SAGA", "ETHFI", "QNT", "XRP", "AVAX", "SEI", "SUI",
 ]
 
 # Filtros
-SETUP_SCORE_MIN = 5.0            # ignorar eventos con score < esto
-REQUIERE_VOL_CONFIRMED = True    # True = solo los que tienen vol confirmado
-PCT_MIN_PUMP = 3.0               # % mínimo para pump
-PCT_MIN_DUMP = -3.0              # % mínimo para dump
+SETUP_SCORE_MIN = 3.0
+REQUIERE_VOL_CONFIRMED = False
+PCT_MIN_PUMP = 3.0
+PCT_MIN_DUMP = -3.0
 
 STATE_FILE = Path("data/pump_dump_state.json")
 SIGNALS_LOG = Path("data/pump_dump_log.jsonl")
@@ -87,7 +87,7 @@ def enviar_telegram(msg):
 def consultar_pumping_events():
     token = os.environ.get("COINBEACON_TOKEN4")
     if not token:
-        print("⚠️ COINBEACON_TOKEN4 no configurado en secrets", flush=True)
+        print("⚠️ COINBEACON_TOKEN4 no configurado", flush=True)
         return []
 
     types = "pump_5m,pump_10m,dump_5m,dump_10m"
@@ -135,7 +135,7 @@ def main():
     print("=" * 70, flush=True)
     print("🚀 PUMP/DUMP BOT — CoinBeacon events", flush=True)
     print(f"   {len(SYMBOLS)} monedas: {', '.join(SYMBOLS)}", flush=True)
-    print(f"   Setup mínimo: {SETUP_SCORE_MIN} | Vol confirmed: {REQUIERE_VOL_CONFIRMED} | % min: {PCT_MIN_PUMP}", flush=True)
+    print(f"   Setup mínimo: {SETUP_SCORE_MIN} | Vol: {REQUIERE_VOL_CONFIRMED} | % min: {PCT_MIN_PUMP}", flush=True)
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
 
@@ -144,13 +144,12 @@ def main():
 
     print("\n📡 Consultando CoinBeacon...", flush=True)
     eventos = consultar_pumping_events()
-    print(f"   Total eventos recibidos: {len(eventos)}", flush=True)
+    print(f"   Total eventos: {len(eventos)}", flush=True)
 
     if not eventos:
-        print("   ⚠️ Sin eventos o error de conexión", flush=True)
+        print("   ⚠️ Sin eventos", flush=True)
         return
 
-    # Filtrar por nuestras monedas
     eventos_filtrados = []
     for ev in eventos:
         symbol_full = ev.get("symbol", "")
@@ -158,9 +157,8 @@ def main():
         if symbol_base in SYMBOLS:
             eventos_filtrados.append(ev)
 
-    print(f"   Eventos de nuestras monedas: {len(eventos_filtrados)}", flush=True)
+    print(f"   Eventos nuestras monedas: {len(eventos_filtrados)}", flush=True)
 
-    ahora_lima = hora_lima().strftime("%Y-%m-%d %H:%M")
     enviadas = 0
 
     for ev in eventos_filtrados:
@@ -173,16 +171,16 @@ def main():
         if clave in vistos:
             continue
 
-        # Extraer datos
+        # Extraer datos PRIMERO
         pct = ev.get("pct", 0)
         setup = ev.get("setupScore", 0)
         vol_ok = ev.get("volConfirmed", False)
         rvol = ev.get("rvol", 0)
 
-        # Print de diagnóstico
-        print(f"   → {symbol_base} {tipo}: pct={pct:+.2f}% setup={setup:.1f} vol_conf={vol_ok} rvol={rvol:.2f}", flush=True)
+        # Print diagnóstico
+        print(f"   → {symbol_base} {tipo}: pct={pct:+.2f}% setup={setup:.1f} vol={vol_ok} rvol={rvol:.2f}", flush=True)
 
-        # Aplicar filtros
+        # Filtros
         if setup < SETUP_SCORE_MIN:
             continue
         if REQUIERE_VOL_CONFIRMED and not vol_ok:
@@ -232,4 +230,26 @@ def main():
                 "bias": bias,
                 "clasif": clasif,
             })
-            print(f"   {emoji} {symbol_base} {tipo} {pct:+.2f}% (setup {setup:.1f})", flush=True)
+            print(f"   {emoji} {symbol_base} {tipo} {pct:+.2f}% → enviado", flush=True)
+
+    todos_vistos = list(vistos)
+    if len(todos_vistos) > 3000:
+        todos_vistos = todos_vistos[-3000:]
+
+    estado["vistos"] = todos_vistos
+    estado["updated_at"] = datetime.now(timezone.utc).isoformat()
+    guardar_estado(estado)
+
+    print("\n" + "=" * 70, flush=True)
+    print(f"🎯 Alertas enviadas: {enviadas}", flush=True)
+    print("=" * 70, flush=True)
+    print("🏁 TERMINADO", flush=True)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"❌ ERROR: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
