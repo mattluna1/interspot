@@ -1,6 +1,6 @@
 {
   "symbol": "SOL",
-  "updated_at": "2026-09-25T04:59:07.665059+00:00",
+  "updated_at": "2026-09-25T05:15:51.267402+00:00",
   "pulso": [
     {
       "ts": 1790270952,
@@ -979,6 +979,26 @@
       "dir15": "down",
       "dir1h": "down",
       "horas_desde_max": 48,
+      "max_reciente": 119.52,
+      "tendencia_bajista": false
+    },
+    {
+      "ts": 1790313351,
+      "price": 116.52,
+      "high15": 116.52,
+      "low15": 116.28,
+      "vol15": 379.5523,
+      "vol_usdt15": 44225.43,
+      "rvol15": 0.04,
+      "dir4h": "down",
+      "rsi15": 44.91,
+      "rsi1h": 52.27,
+      "rsi4h": 55.7,
+      "rsi1d": 65.28,
+      "rsi1w": 63.44,
+      "dir15": "up",
+      "dir1h": "up",
+      "horas_desde_max": 49,
       "max_reciente": 119.52,
       "tendencia_bajista": false
     }
