@@ -179,25 +179,32 @@ def main():
         bias = ev.get("bias", "")
         clasif = ev.get("classification", "")
 
-        print(f"   → {symbol_base} {tipo}: pct={pct:+.2f}% vol={vol_ok} rvol={rvol:.2f} | {bias}/{clasif}", flush=True)
-
-        # Clave de evento único (para no procesar el mismo dos veces)
+        # Clave de evento único
         clave_evento = f"{symbol_full}_{tipo}_{spotted_at}"
         if clave_evento in vistos:
             continue
 
-        # Clave de cooldown: symbol+tipo+bias+clasif
-        # Si cambia bias o clasif → clave distinta → no hay cooldown → alerta
+        print(f"   → {symbol_base} {tipo}: pct={pct:+.2f}% vol={vol_ok} rvol={rvol:.2f} | {bias}/{clasif}", flush=True)
+
+        # FILTRO 1: solo eventos con volumen confirmado
+        if not vol_ok:
+            vistos.add(clave_evento)
+            continue
+
+        # FILTRO 2: % mínimo
+        if "pump" in tipo and pct < PCT_MIN_PUMP:
+            vistos.add(clave_evento)
+            continue
+        if "dump" in tipo and pct > PCT_MIN_DUMP:
+            vistos.add(clave_evento)
+            continue
+
+        # FILTRO 3: cooldown
         clave_cooldown = f"{symbol_base}_{tipo}_{bias}_{clasif}"
         ultimo = cooldowns.get(clave_cooldown, 0)
         if ahora_ts - ultimo < COOLDOWN_MIN * 60:
             print(f"      ⏸️ Cooldown activo ({int((ahora_ts-ultimo)/60)} min)", flush=True)
-            continue
-
-        # Filtro por % mínimo
-        if "pump" in tipo and pct < PCT_MIN_PUMP:
-            continue
-        if "dump" in tipo and pct > PCT_MIN_DUMP:
+            vistos.add(clave_evento)
             continue
 
         price = ev.get("price", 0)
