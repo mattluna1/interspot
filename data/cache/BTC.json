@@ -1,6 +1,6 @@
 {
   "symbol": "BTC",
-  "updated_at": "2026-09-25T19:28:26.404382+00:00",
+  "updated_at": "2026-09-25T19:41:18.377226+00:00",
   "pulso": [
     {
       "ts": 1790322119,
@@ -916,6 +916,26 @@
       "rsi4h": 49.7,
       "rsi1d": 62.68,
       "rsi1w": 62.07,
+      "dir15": "down",
+      "dir1h": "up",
+      "horas_desde_max": 63,
+      "max_reciente": 87169.8,
+      "tendencia_bajista": true
+    },
+    {
+      "ts": 1790365278,
+      "price": 83976.7,
+      "high15": 84079.4,
+      "low15": 83946.0,
+      "vol15": 20.0069,
+      "vol_usdt15": 1680112.48,
+      "rvol15": 0.37,
+      "dir4h": "up",
+      "rsi15": 49.42,
+      "rsi1h": 45.28,
+      "rsi4h": 49.66,
+      "rsi1d": 62.67,
+      "rsi1w": 62.04,
       "dir15": "down",
       "dir1h": "up",
       "horas_desde_max": 63,

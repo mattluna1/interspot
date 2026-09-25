@@ -1,6 +1,6 @@
 {
   "symbol": "DASH",
-  "updated_at": "2026-09-25T19:28:26.404382+00:00",
+  "updated_at": "2026-09-25T19:41:18.377226+00:00",
   "pulso": [
     {
       "ts": 1790322119,
@@ -917,6 +917,26 @@
       "rsi1d": 62.51,
       "rsi1w": 61.49,
       "dir15": "down",
+      "dir1h": "down",
+      "horas_desde_max": 69,
+      "max_reciente": 64.5,
+      "tendencia_bajista": false
+    },
+    {
+      "ts": 1790365278,
+      "price": 63.13,
+      "high15": 63.21,
+      "low15": 62.99,
+      "vol15": 39.8338,
+      "vol_usdt15": 2514.71,
+      "rvol15": 0.06,
+      "dir4h": "up",
+      "rsi15": 51.54,
+      "rsi1h": 52.74,
+      "rsi4h": 56.52,
+      "rsi1d": 62.58,
+      "rsi1w": 61.51,
+      "dir15": "up",
       "dir1h": "down",
       "horas_desde_max": 69,
       "max_reciente": 64.5,
