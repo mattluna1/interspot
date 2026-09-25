@@ -1,27 +1,7 @@
 {
   "symbol": "ETH",
-  "updated_at": "2026-09-25T14:49:50.876123+00:00",
+  "updated_at": "2026-09-25T15:00:26.168234+00:00",
   "pulso": [
-    {
-      "ts": 1790304964,
-      "price": 2676.08,
-      "high15": 2684.18,
-      "low15": 2676.07,
-      "vol15": 1574.9227,
-      "vol_usdt15": 4214619.11,
-      "rvol15": 2.2,
-      "dir4h": "down",
-      "rsi15": 39.8,
-      "rsi1h": 46.65,
-      "rsi4h": 49.02,
-      "rsi1d": 61.78,
-      "rsi1w": 64.5,
-      "dir15": "down",
-      "dir1h": "down",
-      "horas_desde_max": 46,
-      "max_reciente": 2779.5,
-      "tendencia_bajista": true
-    },
     {
       "ts": 1790305813,
       "price": 2678.97,
@@ -939,6 +919,26 @@
       "dir15": "up",
       "dir1h": "down",
       "horas_desde_max": 58,
+      "max_reciente": 2779.5,
+      "tendencia_bajista": true
+    },
+    {
+      "ts": 1790348426,
+      "price": 2694.45,
+      "high15": 2695.91,
+      "low15": 2694.14,
+      "vol15": 18.6785,
+      "vol_usdt15": 50328.28,
+      "rvol15": 0.01,
+      "dir4h": "down",
+      "rsi15": 46.48,
+      "rsi1h": 51.71,
+      "rsi4h": 51.88,
+      "rsi1d": 63.03,
+      "rsi1w": 64.91,
+      "dir15": "down",
+      "dir1h": "down",
+      "horas_desde_max": 59,
       "max_reciente": 2779.5,
       "tendencia_bajista": true
     }
