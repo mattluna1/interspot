@@ -1,6 +1,6 @@
 {
   "symbol": "INJ",
-  "updated_at": "2026-09-25T02:29:44.190969+00:00",
+  "updated_at": "2026-09-25T02:43:32.007402+00:00",
   "pulso": [
     {
       "ts": 1790261446,
@@ -1004,6 +1004,26 @@
       "rsi1w": 69.2,
       "dir15": "down",
       "dir1h": "down",
+      "horas_desde_max": 10,
+      "max_reciente": 8.622,
+      "tendencia_bajista": true
+    },
+    {
+      "ts": 1790304212,
+      "price": 7.903,
+      "high15": 7.909,
+      "low15": 7.843,
+      "vol15": 2297.1831,
+      "vol_usdt15": 18154.64,
+      "rvol15": 0.68,
+      "dir4h": "down",
+      "rsi15": 38.44,
+      "rsi1h": 44.35,
+      "rsi4h": 52.27,
+      "rsi1d": 64.75,
+      "rsi1w": 69.24,
+      "dir15": "up",
+      "dir1h": "up",
       "horas_desde_max": 10,
       "max_reciente": 8.622,
       "tendencia_bajista": true
