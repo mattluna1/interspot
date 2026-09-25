@@ -4,8 +4,8 @@
 PUMP/DUMP BOT — interspot
 - Lee CoinBeacon /pumping/events cada 5 min
 - Solo pump_5m y dump_5m
+- Solo el evento más reciente por moneda (evita ráfagas)
 - Cooldown 15 min por symbol+tipo+bias+clasif
-- Rompe cooldown si cambia bias, clasif o tipo
 - Filtro: % mínimo 2.5% + volumen confirmado
 - Rotación de log a 1 MB
 """
@@ -166,6 +166,7 @@ def main():
         print("   ⚠️ Sin eventos", flush=True)
         return
 
+    # Filtrar por nuestras monedas
     eventos_filtrados = []
     for ev in eventos:
         symbol_full = ev.get("symbol", "")
@@ -174,6 +175,20 @@ def main():
             eventos_filtrados.append(ev)
 
     print(f"   Eventos nuestras monedas: {len(eventos_filtrados)}", flush=True)
+
+    # ═══════════════════════════════════════════════
+    # Agrupar por moneda: solo el evento MÁS RECIENTE de cada una
+    # ═══════════════════════════════════════════════
+    eventos_por_moneda = {}
+    for ev in eventos_filtrados:
+        symbol_base = ev.get("symbol", "").replace("USDT", "")
+        spotted_at = ev.get("spottedAt", 0)
+        actual = eventos_por_moneda.get(symbol_base)
+        if actual is None or spotted_at > actual.get("spottedAt", 0):
+            eventos_por_moneda[symbol_base] = ev
+
+    eventos_filtrados = list(eventos_por_moneda.values())
+    print(f"   Eventos únicos por moneda: {len(eventos_filtrados)}", flush=True)
 
     enviadas = 0
     ahora_ts = datetime.now(timezone.utc).timestamp()
@@ -196,7 +211,7 @@ def main():
 
         print(f"   → {symbol_base} {tipo}: pct={pct:+.2f}% vol={vol_ok} rvol={rvol:.2f} | {bias}/{clasif}", flush=True)
 
-        # FILTRO 1: solo eventos con volumen confirmado
+        # FILTRO 1: volumen confirmado
         if not vol_ok:
             vistos.add(clave_evento)
             continue
