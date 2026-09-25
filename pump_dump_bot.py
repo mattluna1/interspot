@@ -173,14 +173,20 @@ def main():
         if clave in vistos:
             continue
 
+        # Extraer datos
+        pct = ev.get("pct", 0)
         setup = ev.get("setupScore", 0)
+        vol_ok = ev.get("volConfirmed", False)
+        rvol = ev.get("rvol", 0)
+
+        # Print de diagnóstico
+        print(f"   → {symbol_base} {tipo}: pct={pct:+.2f}% setup={setup:.1f} vol_conf={vol_ok} rvol={rvol:.2f}", flush=True)
+
+        # Aplicar filtros
         if setup < SETUP_SCORE_MIN:
             continue
-        if REQUIERE_VOL_CONFIRMED and not ev.get("volConfirmed", False):
+        if REQUIERE_VOL_CONFIRMED and not vol_ok:
             continue
-
-        pct = ev.get("pct", 0)
-        # Filtro por % mínimo
         if "pump" in tipo and pct < PCT_MIN_PUMP:
             continue
         if "dump" in tipo and pct > PCT_MIN_DUMP:
@@ -188,7 +194,6 @@ def main():
 
         price = ev.get("price", 0)
         prev_price = ev.get("prevPrice", 0)
-        vol_conf = ev.get("volConfirmed", False)
         bias = ev.get("bias", "")
         clasif = ev.get("classification", "")
         quote_vol = ev.get("quoteVolume24h", 0)
@@ -221,33 +226,10 @@ def main():
                 "tipo": tipo,
                 "pct": pct,
                 "price": price,
-                "rvol": ev.get("rvol", 0),
-                "vol_conf": vol_conf,
+                "rvol": rvol,
+                "vol_conf": vol_ok,
                 "setup": setup,
                 "bias": bias,
                 "clasif": clasif,
             })
             print(f"   {emoji} {symbol_base} {tipo} {pct:+.2f}% (setup {setup:.1f})", flush=True)
-
-    # Limitar historial
-    todos_vistos = list(vistos)
-    if len(todos_vistos) > 3000:
-        todos_vistos = todos_vistos[-3000:]
-
-    estado["vistos"] = todos_vistos
-    estado["updated_at"] = datetime.now(timezone.utc).isoformat()
-    guardar_estado(estado)
-
-    print("\n" + "=" * 70, flush=True)
-    print(f"🎯 Alertas enviadas: {enviadas}", flush=True)
-    print("=" * 70, flush=True)
-    print("🏁 TERMINADO", flush=True)
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"❌ ERROR: {e}", flush=True)
-        import traceback
-        traceback.print_exc()
