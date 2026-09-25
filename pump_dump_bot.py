@@ -19,8 +19,19 @@ from pathlib import Path
 
 # Monedas a seguir
 SYMBOLS = [
-    "AAVE", "JST", "ACE", "ONDO", "XLM", "BONK",
-    "SAGA", "ETHFI", "QNT", "XRP", "AVAX", "SEI", "SUI",
+    # Actuales
+    "AAVE", "JST", "ACE", "ONDO", "XLM", "BONK", "SAGA", "ETHFI", "QNT", "XRP",
+    "AVAX", "SEI", "SUI",
+    # Memecoins
+    "PEPE", "WIF", "FLOKI", "DOGE", "SHIB",
+    # Layer1
+    "SOL", "NEAR", "APT",
+    # DeFi
+    "UNI", "LINK", "INJ",
+    # AI
+    "FET", "RENDER", "TAO",
+    # Gaming
+    "IMX", "GALA", "AXS",
 ]
 
 # Filtros
