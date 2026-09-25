@@ -1,27 +1,7 @@
 {
   "symbol": "RAY",
-  "updated_at": "2026-09-25T16:43:55.060807+00:00",
+  "updated_at": "2026-09-25T16:56:23.123830+00:00",
   "pulso": [
-    {
-      "ts": 1790311733,
-      "price": 2.0448,
-      "high15": 2.0533,
-      "low15": 2.0448,
-      "vol15": 1307.0436,
-      "vol_usdt15": 2672.64,
-      "rvol15": 0.2,
-      "dir4h": "up",
-      "rsi15": 42.27,
-      "rsi1h": 48.97,
-      "rsi4h": 57.16,
-      "rsi1d": 72.18,
-      "rsi1w": 80.59,
-      "dir15": "down",
-      "dir1h": "up",
-      "horas_desde_max": 10,
-      "max_reciente": 2.2132,
-      "tendencia_bajista": true
-    },
     {
       "ts": 1790312347,
       "price": 2.0394,
@@ -921,6 +901,26 @@
       "horas_desde_max": 22,
       "max_reciente": 2.2132,
       "tendencia_bajista": false
+    },
+    {
+      "ts": 1790355383,
+      "price": 2.07,
+      "high15": 2.0852,
+      "low15": 2.0698,
+      "vol15": 5808.1559,
+      "vol_usdt15": 12022.88,
+      "rvol15": 0.29,
+      "dir4h": "up",
+      "rsi15": 48.12,
+      "rsi1h": 50.55,
+      "rsi4h": 56.57,
+      "rsi1d": 73.37,
+      "rsi1w": 80.86,
+      "dir15": "down",
+      "dir1h": "up",
+      "horas_desde_max": 22,
+      "max_reciente": 2.2132,
+      "tendencia_bajista": true
     }
   ]
 }

@@ -1,27 +1,7 @@
 {
   "symbol": "SEI",
-  "updated_at": "2026-09-25T16:43:55.060807+00:00",
+  "updated_at": "2026-09-25T16:56:23.123830+00:00",
   "pulso": [
-    {
-      "ts": 1790311733,
-      "price": 0.06262,
-      "high15": 0.06281,
-      "low15": 0.06255,
-      "vol15": 91387.37,
-      "vol_usdt15": 5722.68,
-      "rvol15": 0.21,
-      "dir4h": "up",
-      "rsi15": 52.2,
-      "rsi1h": 58.39,
-      "rsi4h": 66.55,
-      "rsi1d": 69.78,
-      "rsi1w": 51.33,
-      "dir15": "down",
-      "dir1h": "up",
-      "horas_desde_max": 2,
-      "max_reciente": 0.06332,
-      "tendencia_bajista": true
-    },
     {
       "ts": 1790312347,
       "price": 0.06244,
@@ -920,6 +900,26 @@
       "dir1h": "up",
       "horas_desde_max": 0,
       "max_reciente": 0.06945,
+      "tendencia_bajista": false
+    },
+    {
+      "ts": 1790355383,
+      "price": 0.06882,
+      "high15": 0.06939,
+      "low15": 0.06865,
+      "vol15": 593601.32,
+      "vol_usdt15": 40851.64,
+      "rvol15": 0.43,
+      "dir4h": "up",
+      "rsi15": 59.87,
+      "rsi1h": 70.54,
+      "rsi4h": 75.89,
+      "rsi1d": 74.63,
+      "rsi1w": 55.22,
+      "dir15": "down",
+      "dir1h": "up",
+      "horas_desde_max": 0,
+      "max_reciente": 0.06882,
       "tendencia_bajista": false
     }
   ]
