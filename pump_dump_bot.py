@@ -204,9 +204,10 @@ def main():
         bias = ev.get("bias", "")
         clasif = ev.get("classification", "")
 
-        # Clave de evento único
+         # Clave de evento único
         clave_evento = f"{symbol_full}_{tipo}_{spotted_at}"
         if clave_evento in vistos:
+            print(f"   ⏭️ {symbol_base} {tipo}: ya visto", flush=True)
             continue
 
         print(f"   → {symbol_base} {tipo}: pct={pct:+.2f}% vol={vol_ok} rvol={rvol:.2f} | {bias}/{clasif}", flush=True)
