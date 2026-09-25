@@ -1,27 +1,7 @@
 {
   "symbol": "SUI",
-  "updated_at": "2026-09-25T09:18:19.505856+00:00",
+  "updated_at": "2026-09-25T09:34:13.569239+00:00",
   "pulso": [
-    {
-      "ts": 1790285329,
-      "price": 1.0233,
-      "high15": 1.0264,
-      "low15": 1.0203,
-      "vol15": 95029.6996,
-      "vol_usdt15": 97243.89,
-      "rvol15": 0.22,
-      "dir4h": "down",
-      "rsi15": 61.53,
-      "rsi1h": 64.75,
-      "rsi4h": 63.8,
-      "rsi1d": 70.38,
-      "rsi1w": 54.34,
-      "dir15": "up",
-      "dir1h": "up",
-      "horas_desde_max": 69,
-      "max_reciente": 1.051,
-      "tendencia_bajista": false
-    },
     {
       "ts": 1790286099,
       "price": 1.0241,
@@ -981,6 +961,26 @@
       "horas_desde_max": 9,
       "max_reciente": 1.0552,
       "tendencia_bajista": true
+    },
+    {
+      "ts": 1790328853,
+      "price": 1.041,
+      "high15": 1.0444,
+      "low15": 1.04,
+      "vol15": 252382.1535,
+      "vol_usdt15": 262729.82,
+      "rvol15": 0.68,
+      "dir4h": "up",
+      "rsi15": 66.29,
+      "rsi1h": 61.94,
+      "rsi4h": 65.91,
+      "rsi1d": 71.39,
+      "rsi1w": 55.0,
+      "dir15": "down",
+      "dir1h": "up",
+      "horas_desde_max": 9,
+      "max_reciente": 1.0552,
+      "tendencia_bajista": false
     }
   ]
 }
