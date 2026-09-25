@@ -1,27 +1,7 @@
 {
   "symbol": "LTC",
-  "updated_at": "2026-09-25T21:51:37.338541+00:00",
+  "updated_at": "2026-09-25T22:08:16.814557+00:00",
   "pulso": [
-    {
-      "ts": 1790330322,
-      "price": 70.78,
-      "high15": 70.95,
-      "low15": 70.65,
-      "vol15": 946.5374,
-      "vol_usdt15": 66995.92,
-      "rvol15": 0.51,
-      "dir4h": "down",
-      "rsi15": 44.74,
-      "rsi1h": 55.05,
-      "rsi4h": 63.59,
-      "rsi1d": 71.02,
-      "rsi1w": 67.24,
-      "dir15": "down",
-      "dir1h": "up",
-      "horas_desde_max": 17,
-      "max_reciente": 74.2,
-      "tendencia_bajista": true
-    },
     {
       "ts": 1790331372,
       "price": 70.35,
@@ -941,6 +921,26 @@
       "horas_desde_max": 29,
       "max_reciente": 74.2,
       "tendencia_bajista": true
+    },
+    {
+      "ts": 1790374096,
+      "price": 71.32,
+      "high15": 71.32,
+      "low15": 70.83,
+      "vol15": 147.5745,
+      "vol_usdt15": 10525.01,
+      "rvol15": 0.07,
+      "dir4h": "up",
+      "rsi15": 59.74,
+      "rsi1h": 57.72,
+      "rsi4h": 63.92,
+      "rsi1d": 70.81,
+      "rsi1w": 67.56,
+      "dir15": "up",
+      "dir1h": "up",
+      "horas_desde_max": 30,
+      "max_reciente": 74.2,
+      "tendencia_bajista": false
     }
   ]
 }
