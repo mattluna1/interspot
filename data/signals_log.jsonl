@@ -76,3 +76,6 @@
 {"ts": "2026-09-26T13:15:21.269824+00:00", "symbol": "SUI", "tipo": "4H_OB_N2", "rsi4h": 68.1, "rsi1d": 77.18, "rsi1w": 59.13, "precio": 1.1664}
 {"ts": "2026-09-26T13:15:22.266336+00:00", "symbol": "NEAR", "tipo": "BAJISTA_24H", "precio": 4.826, "max_reciente": 5.172, "horas_desde_max": 24, "rsi4h": 58.35, "rsi1d": 76.89, "rsi1w": 81.23}
 {"ts": "2026-09-26T13:15:24.350941+00:00", "symbol": "LINK", "tipo": "4H_OB_N2", "rsi4h": 69.63, "rsi1d": 68.42, "rsi1w": 68.89, "precio": 14.217}
+{"ts": "2026-09-26T14:15:59.426425+00:00", "symbol": "ZEC", "tipo": "BAJISTA_24H", "precio": 1540.56, "max_reciente": 1606.01, "horas_desde_max": 26, "rsi4h": 51.13, "rsi1d": 72.55, "rsi1w": 79.34}
+{"ts": "2026-09-26T14:16:00.234190+00:00", "symbol": "DASH", "tipo": "4H_OB_N1", "rsi4h": 71.5, "rsi1d": 69.98, "rsi1w": 64.76, "precio": 71.2}
+{"ts": "2026-09-26T14:16:00.678985+00:00", "symbol": "DASH", "tipo": "4H_OB_N2", "rsi4h": 71.5, "rsi1d": 69.98, "rsi1w": 64.76, "precio": 71.2}
