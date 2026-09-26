@@ -1,6 +1,6 @@
 {
   "symbol": "WLD",
-  "updated_at": "2026-09-26T03:40:05.192872+00:00",
+  "updated_at": "2026-09-26T03:50:56.846966+00:00",
   "pulso": [
     {
       "ts": 1790351472,
@@ -957,6 +957,26 @@
       "rsi1d": 63.24,
       "rsi1w": 55.39,
       "dir15": "down",
+      "dir1h": "down",
+      "horas_desde_max": 4,
+      "max_reciente": 0.4952,
+      "tendencia_bajista": true
+    },
+    {
+      "ts": 1790394656,
+      "price": 0.4815,
+      "high15": 0.4825,
+      "low15": 0.4811,
+      "vol15": 48547.082,
+      "vol_usdt15": 23375.42,
+      "rvol15": 0.05,
+      "dir4h": "down",
+      "rsi15": 46.57,
+      "rsi1h": 63.35,
+      "rsi4h": 63.53,
+      "rsi1d": 63.19,
+      "rsi1w": 55.36,
+      "dir15": "up",
       "dir1h": "down",
       "horas_desde_max": 4,
       "max_reciente": 0.4952,

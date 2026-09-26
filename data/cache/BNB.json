@@ -1,6 +1,6 @@
 {
   "symbol": "BNB",
-  "updated_at": "2026-09-26T03:40:05.192872+00:00",
+  "updated_at": "2026-09-26T03:50:56.846966+00:00",
   "pulso": [
     {
       "ts": 1790351472,
@@ -956,6 +956,26 @@
       "rsi4h": 50.18,
       "rsi1d": 59.09,
       "rsi1w": 62.96,
+      "dir15": "down",
+      "dir1h": "down",
+      "horas_desde_max": 71,
+      "max_reciente": 794.7,
+      "tendencia_bajista": true
+    },
+    {
+      "ts": 1790394656,
+      "price": 774.5,
+      "high15": 774.7,
+      "low15": 774.3,
+      "vol15": 15.7017,
+      "vol_usdt15": 12160.99,
+      "rvol15": 0.38,
+      "dir4h": "down",
+      "rsi15": 43.35,
+      "rsi1h": 47.76,
+      "rsi4h": 49.54,
+      "rsi1d": 58.94,
+      "rsi1w": 62.89,
       "dir15": "down",
       "dir1h": "down",
       "horas_desde_max": 71,

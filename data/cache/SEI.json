@@ -1,6 +1,6 @@
 {
   "symbol": "SEI",
-  "updated_at": "2026-09-26T03:40:05.192872+00:00",
+  "updated_at": "2026-09-26T03:50:56.846966+00:00",
   "pulso": [
     {
       "ts": 1790351472,
@@ -957,6 +957,26 @@
       "rsi1d": 77.1,
       "rsi1w": 57.38,
       "dir15": "down",
+      "dir1h": "down",
+      "horas_desde_max": 2,
+      "max_reciente": 0.07588,
+      "tendencia_bajista": true
+    },
+    {
+      "ts": 1790394656,
+      "price": 0.07285,
+      "high15": 0.07302,
+      "low15": 0.0726,
+      "vol15": 106259.31,
+      "vol_usdt15": 7740.99,
+      "rvol15": 0.11,
+      "dir4h": "down",
+      "rsi15": 41.95,
+      "rsi1h": 64.45,
+      "rsi4h": 74.95,
+      "rsi1d": 77.15,
+      "rsi1w": 57.43,
+      "dir15": "up",
       "dir1h": "down",
       "horas_desde_max": 2,
       "max_reciente": 0.07588,
