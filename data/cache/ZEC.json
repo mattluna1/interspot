@@ -1,6 +1,6 @@
 {
   "symbol": "ZEC",
-  "updated_at": "2026-09-26T19:38:34.845036+00:00",
+  "updated_at": "2026-09-26T19:48:02.743201+00:00",
   "pulso": [
     {
       "ts": 1790408909,
@@ -1021,6 +1021,26 @@
       "horas_desde_max": 31,
       "max_reciente": 1606.01,
       "tendencia_bajista": true
+    },
+    {
+      "ts": 1790452082,
+      "price": 1563.58,
+      "high15": 1564.05,
+      "low15": 1559.19,
+      "vol15": 1082.6672,
+      "vol_usdt15": 1692836.81,
+      "rvol15": 1.85,
+      "dir4h": "up",
+      "rsi15": 55.95,
+      "rsi1h": 57.95,
+      "rsi4h": 54.84,
+      "rsi1d": 73.86,
+      "rsi1w": 79.65,
+      "dir15": "up",
+      "dir1h": "up",
+      "horas_desde_max": 31,
+      "max_reciente": 1606.01,
+      "tendencia_bajista": false
     }
   ]
 }
