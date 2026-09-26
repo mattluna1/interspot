@@ -1,6 +1,6 @@
 {
   "symbol": "STX",
-  "updated_at": "2026-09-26T10:08:36.545143+00:00",
+  "updated_at": "2026-09-26T10:22:56.240554+00:00",
   "pulso": [
     {
       "ts": 1790374999,
@@ -977,6 +977,26 @@
       "rsi1d": 68.26,
       "rsi1w": 67.13,
       "dir15": "up",
+      "dir1h": "up",
+      "horas_desde_max": 2,
+      "max_reciente": 0.3511,
+      "tendencia_bajista": true
+    },
+    {
+      "ts": 1790418176,
+      "price": 0.3435,
+      "high15": 0.3456,
+      "low15": 0.3435,
+      "vol15": 51928.3221,
+      "vol_usdt15": 17837.38,
+      "rvol15": 0.97,
+      "dir4h": "down",
+      "rsi15": 57.26,
+      "rsi1h": 65.09,
+      "rsi4h": 63.36,
+      "rsi1d": 67.99,
+      "rsi1w": 66.97,
+      "dir15": "down",
       "dir1h": "up",
       "horas_desde_max": 2,
       "max_reciente": 0.3511,

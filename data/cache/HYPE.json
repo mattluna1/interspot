@@ -1,6 +1,6 @@
 {
   "symbol": "HYPE",
-  "updated_at": "2026-09-26T10:08:36.545143+00:00",
+  "updated_at": "2026-09-26T10:22:56.240554+00:00",
   "pulso": [
     {
       "ts": 1790374999,
@@ -977,6 +977,26 @@
       "rsi1d": 61.8,
       "rsi1w": 67.52,
       "dir15": "up",
+      "dir1h": "up",
+      "horas_desde_max": 69,
+      "max_reciente": 95.612,
+      "tendencia_bajista": true
+    },
+    {
+      "ts": 1790418176,
+      "price": 91.882,
+      "high15": 91.984,
+      "low15": 91.879,
+      "vol15": 1074.6723,
+      "vol_usdt15": 98743.04,
+      "rvol15": 0.37,
+      "dir4h": "down",
+      "rsi15": 50.5,
+      "rsi1h": 47.35,
+      "rsi4h": 47.37,
+      "rsi1d": 61.77,
+      "rsi1w": 67.51,
+      "dir15": "down",
       "dir1h": "up",
       "horas_desde_max": 69,
       "max_reciente": 95.612,
