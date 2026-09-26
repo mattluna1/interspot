@@ -1,8 +1,8 @@
 {
   "SUI": {
-    "rsi4h": 66.68,
-    "rsi1d": 75.28,
-    "rsi1w": 59.06,
+    "rsi4h": 65.24,
+    "rsi1d": 74.46,
+    "rsi1w": 58.84,
     "cruces": {
       "4h_sale_ob": 1790162048,
       "4h_entra_ob": 1790161077
@@ -22,9 +22,9 @@
     "ultimo_tramo_alerta": 0
   },
   "ARB": {
-    "rsi4h": 51.57,
-    "rsi1d": 67.48,
-    "rsi1w": 64.62,
+    "rsi4h": 50.69,
+    "rsi1d": 67.07,
+    "rsi1w": 64.5,
     "cruces": {
       "4h_entra_ob": 1790141924,
       "4h_sale_ob": 1790143856,
@@ -45,9 +45,9 @@
     "ultimo_tramo_alerta": 2
   },
   "RAY": {
-    "rsi4h": 54.06,
-    "rsi1d": 71.71,
-    "rsi1w": 80.53,
+    "rsi4h": 53.67,
+    "rsi1d": 71.4,
+    "rsi1w": 80.47,
     "cruces": {
       "1d_entra_ob": 1790174976,
       "4h_entra_ob": 1790189337,
@@ -68,9 +68,9 @@
     "ultimo_tramo_alerta": 1
   },
   "NEAR": {
-    "rsi4h": 58.62,
-    "rsi1d": 77.06,
-    "rsi1w": 81.26,
+    "rsi4h": 59.01,
+    "rsi1d": 77.39,
+    "rsi1w": 81.32,
     "cruces": {
       "4h_entra_ob": 1790175596,
       "4h_sale_ob": 1790177594
@@ -90,9 +90,9 @@
     "ultimo_tramo_alerta": 1
   },
   "UNI": {
-    "rsi4h": 54.65,
-    "rsi1d": 77.95,
-    "rsi1w": 75.11,
+    "rsi4h": 53.92,
+    "rsi1d": 77.33,
+    "rsi1w": 75.03,
     "cruces": {
       "4h_sale_ob": 1790153937
     },
@@ -111,9 +111,9 @@
     "ultimo_tramo_alerta": 1
   },
   "ENA": {
-    "rsi4h": 75.1,
-    "rsi1d": 80.25,
-    "rsi1w": 67.24,
+    "rsi4h": 73.26,
+    "rsi1d": 79.3,
+    "rsi1w": 67.07,
     "cruces": {
       "1d_entra_ob": 1790186057
     },
@@ -132,9 +132,9 @@
     "ultimo_tramo_alerta": 0
   },
   "APT": {
-    "rsi4h": 58.52,
-    "rsi1d": 70.12,
-    "rsi1w": 48.69,
+    "rsi4h": 56.85,
+    "rsi1d": 69.02,
+    "rsi1w": 48.43,
     "cruces": {
       "4h_sale_ob": 1790169009,
       "4h_entra_ob": 1790164521
@@ -154,9 +154,9 @@
     "ultimo_tramo_alerta": 0
   },
   "AVAX": {
-    "rsi4h": 57.09,
-    "rsi1d": 69.3,
-    "rsi1w": 60.81,
+    "rsi4h": 54.24,
+    "rsi1d": 67.75,
+    "rsi1w": 60.13,
     "cruces": {},
     "estado_extremo": {
       "1d_ext_alto": false,
@@ -173,9 +173,9 @@
     "ultimo_tramo_alerta": 0
   },
   "INJ": {
-    "rsi4h": 44.67,
-    "rsi1d": 61.22,
-    "rsi1w": 66.91,
+    "rsi4h": 44.63,
+    "rsi1d": 61.19,
+    "rsi1w": 66.89,
     "cruces": {
       "1w_entra_ob": 1790175596,
       "1d_entra_ob": 1790174976
@@ -195,9 +195,9 @@
     "ultimo_tramo_alerta": 2
   },
   "ZEC": {
-    "rsi4h": 54.74,
-    "rsi1d": 73.85,
-    "rsi1w": 79.65,
+    "rsi4h": 54.83,
+    "rsi1d": 73.96,
+    "rsi1w": 79.67,
     "cruces": {
       "1d_entra_ob": 1790205069
     },
@@ -216,9 +216,9 @@
     "ultimo_tramo_alerta": 1
   },
   "SEI": {
-    "rsi4h": 69.82,
-    "rsi1d": 74.78,
-    "rsi1w": 57.32,
+    "rsi4h": 69.52,
+    "rsi1d": 74.82,
+    "rsi1w": 57.33,
     "cruces": {
       "4h_entra_ob": 1790145393,
       "4h_sale_ob": 1790151088,
@@ -239,9 +239,9 @@
     "ultimo_tramo_alerta": 0
   },
   "DASH": {
-    "rsi4h": 72.18,
-    "rsi1d": 70.4,
-    "rsi1w": 64.94,
+    "rsi4h": 71.17,
+    "rsi1d": 70.22,
+    "rsi1w": 64.85,
     "cruces": {},
     "estado_extremo": {
       "1d_ext_alto": false,
@@ -258,10 +258,10 @@
     "ultimo_tramo_alerta": 0
   },
   "_BTC": {
-    "rsi4h": 49.71,
+    "rsi4h": 49.73,
     "rsi1d": 62.52,
-    "rsi15": 43.94,
-    "rsi1h": 47.94
+    "rsi15": 44.69,
+    "rsi1h": 47.99
   },
   "WLD": {
     "4h_ob_lado": "dentro",
@@ -270,9 +270,9 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 73.08,
-    "rsi1d": 68.34,
-    "rsi1w": 58.72,
+    "rsi4h": 71.77,
+    "rsi1d": 67.76,
+    "rsi1w": 58.56,
     "ultimo_tramo_alerta": 0
   },
   "ETH": {
@@ -282,21 +282,21 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 49.9,
-    "rsi1d": 62.24,
-    "rsi1w": 64.72,
+    "rsi4h": 49.19,
+    "rsi1d": 61.95,
+    "rsi1w": 64.65,
     "ultimo_tramo_alerta": 2
   },
   "LINK": {
-    "4h_ob_lado": "dentro",
-    "4h_ob_nivel": 2,
+    "4h_ob_lado": "fuera",
+    "4h_ob_nivel": 0,
     "4h_os_lado": "fuera",
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 68.63,
-    "rsi1d": 67.83,
-    "rsi1w": 68.8,
+    "rsi4h": 65.45,
+    "rsi1d": 66.62,
+    "rsi1w": 68.49,
     "ultimo_tramo_alerta": 0
   },
   "SOL": {
@@ -306,9 +306,9 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 62.24,
-    "rsi1d": 68.5,
-    "rsi1w": 65.31,
+    "rsi4h": 60.85,
+    "rsi1d": 67.96,
+    "rsi1w": 65.19,
     "ultimo_tramo_alerta": 0
   },
   "BNB": {
@@ -318,9 +318,9 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OB",
     "1w_lado": "esperando_OB",
-    "rsi4h": 46.62,
-    "rsi1d": 57.95,
-    "rsi1w": 62.6,
+    "rsi4h": 45.81,
+    "rsi1d": 57.72,
+    "rsi1w": 62.52,
     "ultimo_tramo_alerta": 2
   },
   "LTC": {
@@ -330,9 +330,9 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 60.92,
-    "rsi1d": 70.13,
-    "rsi1w": 68.03,
+    "rsi4h": 59.34,
+    "rsi1d": 69.23,
+    "rsi1w": 67.73,
     "ultimo_tramo_alerta": 1
   },
   "STX": {
@@ -342,9 +342,9 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 58.43,
-    "rsi1d": 65.75,
-    "rsi1w": 66.41,
+    "rsi4h": 57.47,
+    "rsi1d": 65.25,
+    "rsi1w": 66.26,
     "ultimo_tramo_alerta": 0
   },
   "HYPE": {
@@ -354,9 +354,9 @@
     "4h_os_nivel": 0,
     "1d_lado": "esperando_OS",
     "1w_lado": "esperando_OB",
-    "rsi4h": 46.89,
-    "rsi1d": 60.89,
-    "rsi1w": 67.41,
+    "rsi4h": 46.45,
+    "rsi1d": 60.62,
+    "rsi1w": 67.3,
     "ultimo_tramo_alerta": 2
   }
 }
