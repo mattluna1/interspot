@@ -85,3 +85,4 @@
 {"ts": "2026-09-25T06:08:22.786316+00:00", "symbol": "SAGA", "tipo": "pump_5m", "pct": 6.14, "price": 0.03508, "rvol": 2.24, "vol_conf": true, "bias": "bearish", "clasif": "continuation"}
 {"ts": "2026-09-25T10:19:41.610985+00:00", "symbol": "SAGA", "tipo": "pump_5m", "pct": 5.12, "price": 0.03757, "rvol": 3.97, "vol_conf": true, "bias": "bearish", "clasif": "neutral"}
 {"ts": "2026-09-26T03:30:45.482509+00:00", "symbol": "SAGA", "tipo": "pump_5m", "pct": 15.61, "price": 0.0371, "rvol": 8.68, "vol_conf": true, "bias": "bearish", "clasif": "neutral"}
+{"ts": "2026-09-26T03:45:28.029589+00:00", "symbol": "SAGA", "tipo": "dump_5m", "pct": -6.23, "price": 0.04037, "rvol": 2.1, "vol_conf": true, "bias": "bullish", "clasif": "continuation"}
