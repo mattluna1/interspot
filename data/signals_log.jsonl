@@ -82,3 +82,5 @@
 {"ts": "2026-09-26T15:15:52.750415+00:00", "symbol": "WLD", "tipo": "4H_OB_N1", "rsi4h": 70.67, "rsi1d": 66.64, "rsi1w": 57.17, "precio": 0.5091}
 {"ts": "2026-09-26T16:17:02.503948+00:00", "symbol": "INJ", "tipo": "BAJISTA_48H", "precio": 7.853, "max_reciente": 8.622, "horas_desde_max": 48, "rsi4h": 49.11, "rsi1d": 63.81, "rsi1w": 68.74}
 {"ts": "2026-09-26T19:14:13.906569+00:00", "symbol": "WLD", "tipo": "4H_OB_N2", "rsi4h": 73.08, "rsi1d": 68.34, "rsi1w": 58.72, "precio": 0.5343}
+{"ts": "2026-09-26T23:15:06.034371+00:00", "symbol": "SUI", "tipo": "BAJISTA_24H", "precio": 1.159, "max_reciente": 1.1949, "horas_desde_max": 24, "rsi4h": 65.56, "rsi1d": 74.56, "rsi1w": 58.89}
+{"ts": "2026-09-26T23:15:09.642394+00:00", "symbol": "SOL", "tipo": "BAJISTA_24H", "precio": 121.44, "max_reciente": 122.21, "horas_desde_max": 25, "rsi4h": 62.49, "rsi1d": 68.78, "rsi1w": 65.37}
