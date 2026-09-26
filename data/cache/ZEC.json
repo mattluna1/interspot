@@ -1,27 +1,7 @@
 {
   "symbol": "ZEC",
-  "updated_at": "2026-09-26T21:37:36.677673+00:00",
+  "updated_at": "2026-09-26T21:47:11.648735+00:00",
   "pulso": [
-    {
-      "ts": 1790415735,
-      "price": 1524.55,
-      "high15": 1524.55,
-      "low15": 1517.36,
-      "vol15": 159.362,
-      "vol_usdt15": 242955.29,
-      "rvol15": 1.08,
-      "dir4h": "down",
-      "rsi15": 39.1,
-      "rsi1h": 40.8,
-      "rsi4h": 48.61,
-      "rsi1d": 70.84,
-      "rsi1w": 79.12,
-      "dir15": "up",
-      "dir1h": "down",
-      "horas_desde_max": 71,
-      "max_reciente": 1652.0,
-      "tendencia_bajista": false
-    },
     {
       "ts": 1790416453,
       "price": 1523.18,
@@ -1040,6 +1020,26 @@
       "dir1h": "up",
       "horas_desde_max": 0,
       "max_reciente": 1666.9,
+      "tendencia_bajista": false
+    },
+    {
+      "ts": 1790459231,
+      "price": 1674.81,
+      "high15": 1679.6,
+      "low15": 1671.32,
+      "vol15": 628.2876,
+      "vol_usdt15": 1052262.44,
+      "rvol15": 0.46,
+      "dir4h": "up",
+      "rsi15": 81.7,
+      "rsi1h": 81.91,
+      "rsi4h": 67.94,
+      "rsi1d": 77.81,
+      "rsi1w": 81.03,
+      "dir15": "up",
+      "dir1h": "up",
+      "horas_desde_max": 0,
+      "max_reciente": 1675.69,
       "tendencia_bajista": false
     }
   ]
