@@ -1,6 +1,6 @@
 {
   "symbol": "ARB",
-  "updated_at": "2026-09-26T04:10:20.318029+00:00",
+  "updated_at": "2026-09-26T04:23:19.671820+00:00",
   "pulso": [
     {
       "ts": 1790353637,
@@ -957,6 +957,26 @@
       "rsi1d": 70.34,
       "rsi1w": 64.83,
       "dir15": "up",
+      "dir1h": "up",
+      "horas_desde_max": 71,
+      "max_reciente": 0.24994,
+      "tendencia_bajista": false
+    },
+    {
+      "ts": 1790396599,
+      "price": 0.22389,
+      "high15": 0.2253,
+      "low15": 0.22385,
+      "vol15": 226128.9522,
+      "vol_usdt15": 50628.01,
+      "rvol15": 0.38,
+      "dir4h": "up",
+      "rsi15": 50.42,
+      "rsi1h": 52.69,
+      "rsi4h": 53.58,
+      "rsi1d": 70.17,
+      "rsi1w": 64.75,
+      "dir15": "down",
       "dir1h": "up",
       "horas_desde_max": 71,
       "max_reciente": 0.24994,
