@@ -1,27 +1,7 @@
 {
   "symbol": "UNI",
-  "updated_at": "2026-09-26T02:55:52.137558+00:00",
+  "updated_at": "2026-09-26T03:09:27.624889+00:00",
   "pulso": [
-    {
-      "ts": 1790348426,
-      "price": 9.724,
-      "high15": 9.726,
-      "low15": 9.71,
-      "vol15": 303.2388,
-      "vol_usdt15": 2948.69,
-      "rvol15": 0.0,
-      "dir4h": "down",
-      "rsi15": 61.17,
-      "rsi1h": 65.92,
-      "rsi4h": 59.54,
-      "rsi1d": 80.97,
-      "rsi1w": 75.46,
-      "dir15": "down",
-      "dir1h": "down",
-      "horas_desde_max": 61,
-      "max_reciente": 10.729,
-      "tendencia_bajista": false
-    },
     {
       "ts": 1790349817,
       "price": 9.653,
@@ -960,6 +940,26 @@
       "dir1h": "up",
       "horas_desde_max": 71,
       "max_reciente": 10.71,
+      "tendencia_bajista": false
+    },
+    {
+      "ts": 1790392167,
+      "price": 9.582,
+      "high15": 9.615,
+      "low15": 9.582,
+      "vol15": 6919.3912,
+      "vol_usdt15": 66301.61,
+      "rvol15": 0.32,
+      "dir4h": "down",
+      "rsi15": 49.74,
+      "rsi1h": 54.49,
+      "rsi4h": 56.39,
+      "rsi1d": 80.29,
+      "rsi1w": 75.12,
+      "dir15": "down",
+      "dir1h": "down",
+      "horas_desde_max": 69,
+      "max_reciente": 10.451,
       "tendencia_bajista": false
     }
   ]
