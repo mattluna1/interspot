@@ -14,8 +14,9 @@ import requests
 
 # ============================================================
 # MULTI SMART — SOLO LONGs
-# Filtro BTC v3 (fix delta=None): permite INDECISO en primera corrida
-# Umbrales: conf 6.5 | score 75 | status activo | distancia ≤ 1.0%
+# Filtro BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta>=0 o N/A
+# Fix: retest holding vale para support Y resistance
+# Umbrales: conf 6.0 | dir -20 | score 70 | status activo | dist ≤ 1.0%
 # ============================================================
 
 SYMBOLS = [
@@ -54,8 +55,8 @@ SMART_DIRECTION_SCORE_MIN_LONG = -20
 SMART_TOTAL_SCORE_MIN = 70
 
 # [FILTRO BTC v3] Umbrales
-BTC_REBOTE_RSI4H_MIN = 45    # RSI4h mínimo para considerar rebote temprano
-BTC_REBOTE_DELTA_MIN = 0.0   # delta_2h debe ser >= 0 (RSI4h subiendo o plano)
+BTC_REBOTE_RSI4H_MIN = 45
+BTC_REBOTE_DELTA_MIN = 0.0
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -986,7 +987,7 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
 
     print(f"\n🧭 BTC {btc_dir.upper()} {btc_modo.upper()}", flush=True)
 
-    # ═══ BOT SOLO LONGs (filtro ya aplicado en main) ═══
+    # ═══ BOT SOLO LONGs ═══
     if btc_dir != "up":
         print(f"   ⏸️ BTC no está UP → solo LONGs, esperar.", flush=True)
         return []
@@ -1028,11 +1029,15 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             continue
 
         # ═══ 2) Clasificar operación apta para LONG ═══
+        # [FIX] retest holding vale para support Y resistance
         tipo_operacion = None
+        # Breakout al alza (solo resistance)
         if tipo == "resistance" and ("near breakout" in status or "broke up" in status):
             tipo_operacion = "breakout"
-        elif tipo == "support" and "retest" in status and "holding" in status:
+        # Retest holding (support Y resistance)
+        elif "retest" in status and "holding" in status:
             tipo_operacion = "rebote"
+        # Soporte rising cerca (solo support)
         elif tipo == "support" and inclinacion == "rising" and abs(distancia) <= 1.0:
             tipo_operacion = "rebote"
 
@@ -1051,7 +1056,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         bias_linea = str(linea.get("bias", "")).lower()
         dir_score = linea.get("direction_score") or 0
 
-        # Filtros Smart para LONG
         if bias_linea == "bearish":
             print(f"   ⏭️ {symbol} {linea.get('timeframe')} LONG bloqueado: bias=BEARISH", flush=True)
             continue
@@ -1059,7 +1063,7 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             print(f"   ⏭️ {symbol} {linea.get('timeframe')} LONG bloqueado: dirScore {dir_score:.0f} < {SMART_DIRECTION_SCORE_MIN_LONG}", flush=True)
             continue
 
-        # ═══ 3) Distancia máxima unificada en 1.0% ═══
+        # ═══ 3) Distancia máxima 1.0% ═══
         if abs(distancia) > 1.0:
             continue
 
@@ -1074,7 +1078,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
 
         operacion = "LONG"
 
-        # PD: si hay dump activo, bloquear LONG (a menos que sea reversal)
         if pd["activo"]:
             if pd["direccion"] == "down" and not pd["reversal"]:
                 print(f"   ⏭️ {symbol} {tf} LONG bloqueado: PD dump {pd['pct']:+.2f}%", flush=True)
@@ -1345,8 +1348,8 @@ def main():
     print("🚀 MULTI SMART — SOLO LONGs", flush=True)
     print(f"   Lista dinámica desde CoinBeacon (hasta {MAX_MONEDAS_DINAMICAS})", flush=True)
     print(f"   Filtro BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta>=0 (o N/A) y RSI4h>={BTC_REBOTE_RSI4H_MIN}", flush=True)
-    print(f"   Smart línea: conf≥{SMART_LINE_SCORE_MIN} | dir≥{SMART_DIRECTION_SCORE_MIN_LONG} | score≥{SMART_TOTAL_SCORE_MIN}", flush=True)
-    print(f"   Status: near breakout / broke up / retest holding / rising cerca (≤1.0%)", flush=True)
+    print(f"   Smart línea: conf>={SMART_LINE_SCORE_MIN} | dir>={SMART_DIRECTION_SCORE_MIN_LONG} | score>={SMART_TOTAL_SCORE_MIN}", flush=True)
+    print(f"   Status: near breakout / broke up / retest holding (S y R) / rising cerca (<=1.0%)", flush=True)
     print("=" * 70, flush=True)
 
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
@@ -1373,7 +1376,7 @@ def main():
         prev_btc=prev_btc
     )
 
-    # ═══ FILTRO BTC v3 (con fix delta=None) ═══
+    # ═══ FILTRO BTC v3 ═══
     btc_dir = btc_context.get("btc_dir")
     btc_modo = btc_context.get("btc_modo")
     btc_estado = btc_context.get("estado")
@@ -1391,9 +1394,6 @@ def main():
         permitir_longs = True
         razon_filtro = "BTC UP FUERTE + FAVORABLE"
     elif btc_modo == "indeciso" and btc_rsi4 is not None and btc_rsi4 >= BTC_REBOTE_RSI4H_MIN:
-        # [FIX A] delta=None (primera corrida) → permitir (beneficio de la duda)
-        # delta>=0 → permitir (rebote en curso)
-        # delta<0 → bloquear (girando a la baja)
         if btc_delta is None or btc_delta >= BTC_REBOTE_DELTA_MIN:
             permitir_longs = True
             delta_txt = f"{btc_delta:+.2f}" if btc_delta is not None else "N/A (primera corrida)"
