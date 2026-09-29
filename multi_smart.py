@@ -15,6 +15,7 @@ import requests
 # ============================================================
 # MULTI SMART — SOLO LONGs
 # Lista dinámica desde CoinBeacon | Filtros Smart | PD | BTC contexto
+# Filtro de status: near breakout / broke up / retest holding / rising cerca
 # ============================================================
 
 SYMBOLS = [
@@ -1008,7 +1009,26 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             continue
 
         status = str(linea.get("status", "")).lower()
-        if "broken" in status and "retest" not in status:
+        inclinacion = str(linea.get("fallingOrRising", "")).lower()
+
+        # ═══ 1) Descartar status malos para LONG ═══
+        if "broke down" in status:
+            continue
+        if "failed break" in status:
+            continue
+        if "near breakdown" in status:
+            continue
+
+        # ═══ 2) Clasificar operación apta para LONG ═══
+        tipo_operacion = None
+        if tipo == "resistance" and ("near breakout" in status or "broke up" in status):
+            tipo_operacion = "breakout"
+        elif tipo == "support" and "retest" in status and "holding" in status:
+            tipo_operacion = "rebote"
+        elif tipo == "support" and inclinacion == "rising" and abs(distancia) <= 1.0:
+            tipo_operacion = "rebote"
+
+        if tipo_operacion is None:
             continue
 
         quality = linea.get("structure_quality", "IGNORE")
@@ -1031,32 +1051,12 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             print(f"   ⏭️ {symbol} {linea.get('timeframe')} LONG bloqueado: dirScore {dir_score:.0f} < {SMART_DIRECTION_SCORE_MIN_LONG}", flush=True)
             continue
 
+        # ═══ 3) Distancia máxima unificada en 1.0% ═══
+        if abs(distancia) > 1.0:
+            continue
+
         tf = linea.get("timeframe")
-        if tf == "1h":
-            max_dist = 2.0
-            tendencia = tendencia_1h
-        else:
-            max_dist = 1.5
-            tendencia = tendencia_15m
-
-        if abs(distancia) > max_dist:
-            continue
-
-        # Para LONG necesitamos que la tendencia del alt sea "up"
-        # y la línea sea resistencia rota a la baja (soporte efectivo)
-        if tendencia == "up":
-            nivel_esperado = "resistance"
-        else:
-            continue
-
-        tipo_efectivo = tipo
-        if tipo == "resistance" and distancia < 0:
-            tipo_efectivo = "support"
-        elif tipo == "support" and distancia > 0:
-            tipo_efectivo = "resistance"
-
-        if tipo_efectivo != nivel_esperado:
-            continue
+        tendencia = tendencia_1h if tf == "1h" else tendencia_15m
 
         operacion = "LONG"
         total_score = linea.get("total_score", 0)
@@ -1071,15 +1071,16 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         if pd["activo"] and pd["direccion"] == "up":
             pd_confirmado = True
 
-        print(f"   ✅ {symbol} {tf} | LONG | dist {distancia:+.2f}% | score {total_score:.1f} | conf {confidence:.1f} | dir {dir_score:.0f} | bias {bias_linea}", flush=True)
+        print(f"   ✅ {symbol} {tf} | LONG {tipo_operacion} | status '{status}' | dist {distancia:+.2f}% | score {total_score:.1f} | conf {confidence:.1f} | dir {dir_score:.0f} | bias {bias_linea}", flush=True)
 
         candidates_by_tf.setdefault(tf, []).append({
             "line": linea,
             "operacion": operacion,
+            "tipo_operacion": tipo_operacion,
             "score": total_score,
             "distancia": abs(distancia),
             "tendencia": tendencia,
-            "tipo_efectivo": tipo_efectivo,
+            "tipo_efectivo": tipo,
             "prioridad_patron": _prioridad_patron(linea),
             "pd_confirmado": pd_confirmado,
         })
@@ -1111,6 +1112,7 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             "line": linea,
             "volume": volume if volume else {},
             "score": total_score,
+            "tipo_operacion": cand.get("tipo_operacion", "rebote"),
             "is_spike": is_spike,
             "is_dry_up": is_dry_up,
             "is_exhaustion": is_exhaustion,
@@ -1187,6 +1189,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         tendencia = alert.get("tendencia") or "?"
         flecha = "↑" if tendencia == "up" else "↓" if tendencia == "down" else "?"
         flip_text = " [FLIP]" if tipo_efectivo != tipo_linea else ""
+        tipo_op_txt = (alert.get("tipo_operacion") or "rebote").upper()
 
         tags = []
         if alert.get("is_near_breakout"):
@@ -1243,7 +1246,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
 
         msg = (
             f"📊 MULTI SMART\n"
-            f"{emoji} {operacion} {symbol}\n"
+            f"{emoji} {operacion} {symbol} [{tipo_op_txt}]\n"
             f"📈 Precio actual: ${precio_actual:.6f}\n"
             f"📉 {tipo_linea}{flip_text} ({inclinacion})\n"
             f"   • TF: {line.get('timeframe', '')}\n"
@@ -1325,6 +1328,7 @@ def main():
     print("🚀 MULTI SMART — SOLO LONGs", flush=True)
     print(f"   Lista dinámica desde CoinBeacon (hasta {MAX_MONEDAS_DINAMICAS})", flush=True)
     print(f"   Smart: conf≥{SMART_LINE_SCORE_MIN} | dir≥{SMART_DIRECTION_SCORE_MIN_LONG} para LONG", flush=True)
+    print(f"   Status: near breakout / broke up / retest holding / rising cerca (≤1.0%)", flush=True)
     print("=" * 70, flush=True)
 
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
