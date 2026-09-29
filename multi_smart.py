@@ -14,9 +14,8 @@ import requests
 
 # ============================================================
 # MULTI SMART — SOLO LONGs
-# Lista dinámica desde CoinBeacon | Filtros Smart | PD | BTC contexto
-# Filtro BTC: dir=up Y estado=FAVORABLE
-# Filtro confianza línea: 6.5 | Filtro score interno: 75
+# Filtro BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta positivo
+# Umbrales: conf 6.5 | score 75 | status activo | distancia ≤ 1.0%
 # ============================================================
 
 SYMBOLS = [
@@ -50,9 +49,13 @@ RSI15_SUELO_ENTRADA = 35.0
 PD_VENTANA_MIN = 10
 PD_MIN_PCT = 2.0
 
-SMART_LINE_SCORE_MIN = 6.5           # [AJUSTE] era 6.0
+SMART_LINE_SCORE_MIN = 6.5
 SMART_DIRECTION_SCORE_MIN_LONG = -20
-SMART_TOTAL_SCORE_MIN = 75           # [AJUSTE] nuevo
+SMART_TOTAL_SCORE_MIN = 75
+
+# [FILTRO BTC v3] Umbrales
+BTC_REBOTE_RSI4H_MIN = 45    # RSI4h mínimo para considerar rebote temprano
+BTC_REBOTE_DELTA_MIN = 0.0   # delta_2h debe ser > 0 (RSI4h subiendo)
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -807,6 +810,8 @@ def analizar_contexto_btc(btc_coin_data, btc_rsi_data, rsi4_anterior=None,
     print(f"\n🧭 BTC {btc_dir.upper()} {btc_modo.upper()} ({razon})", flush=True)
     if delta_2h is not None:
         print(f"   Δ2h = {delta_2h:+.2f}", flush=True)
+    else:
+        print(f"   Δ2h = N/A (sin rsi4_anterior)", flush=True)
 
     estado_btc = "FAVORABLE" if btc_rsi_ok else "DESFAVORABLE"
     print(f"📊 ESTADO BTC: {estado_btc}", flush=True)
@@ -858,7 +863,7 @@ def guardar_en_csv(alert_data):
         "tipo_efectivo",
         "rsi1h", "rsi15m", "tendencia",
         "btc_rsi4h", "btc_rsi1h", "btc_rsi15m", "btc_estado",
-        "btc_dir", "btc_modo", "btc_razon",
+        "btc_dir", "btc_modo", "btc_razon", "btc_delta",
         "pd_tipo", "pd_pct", "pd_rvol", "pd_conf",
         "smart_direction", "smart_line_score",
         "structure_quality", "total_score"
@@ -974,13 +979,14 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
     btc_rsi1 = btc_context.get("rsi1")
     btc_rsi15 = btc_context.get("rsi15")
     btc_estado = btc_context.get("estado", "DESFAVORABLE")
+    btc_delta = btc_context.get("delta_2h")
 
     tendencia_15m = rsi_data.get("15m", {}).get("tendencia") if rsi_data else None
     tendencia_1h = rsi_data.get("1h", {}).get("tendencia") if rsi_data else None
 
     print(f"\n🧭 BTC {btc_dir.upper()} {btc_modo.upper()}", flush=True)
 
-    # ═══ BOT SOLO LONGs ═══
+    # ═══ BOT SOLO LONGs (filtro ya aplicado en main) ═══
     if btc_dir != "up":
         print(f"   ⏸️ BTC no está UP → solo LONGs, esperar.", flush=True)
         return []
@@ -1138,6 +1144,7 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             "btc_dir": btc_dir,
             "btc_modo": btc_modo,
             "btc_razon": razon_ventana,
+            "btc_delta": btc_delta,
             "structure_quality": linea.get("structure_quality"),
             "total_score": total_score,
             "pd_confirmado": cand.get("pd_confirmado", False),
@@ -1222,6 +1229,8 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         btc_rsi4h_str = f"{btc_rsi4h:.2f}" if btc_rsi4h is not None else "N/A"
         btc_rsi1h_str = f"{btc_rsi1h:.2f}" if btc_rsi1h is not None else "N/A"
         btc_rsi15m_str = f"{btc_rsi15m:.2f}" if btc_rsi15m is not None else "N/A"
+        btc_delta = alert.get('btc_delta')
+        btc_delta_str = f"{btc_delta:+.2f}" if btc_delta is not None else "N/A"
 
         estado_btc = btc_context.get("estado", "DESFAVORABLE")
         btc_dir_str = alert.get("btc_dir", "flat").upper()
@@ -1262,7 +1271,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
             f"🎯 Score: {alert['score']:.1f}\n"
             f"📈 Momentum: {flecha} {tendencia}\n"
             f"🌐 BTC: {btc_dir_str} {btc_modo_str} | RSI4h {btc_rsi4h_str} RSI1h {btc_rsi1h_str} RSI15m {btc_rsi15m_str}\n"
-            f"📊 Estado BTC: {estado_btc}\n"
+            f"📊 Estado BTC: {estado_btc} | Δ2h {btc_delta_str}\n"
             f"{smart_linea}\n"
             f"🧠 RSI moneda: 1h={rsi1h_str} | 15m={rsi15m_str}\n"
             f"{pd_linea}\n"
@@ -1291,6 +1300,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
                 "btc_estado": estado_btc,
                 "btc_dir": btc_dir_str, "btc_modo": btc_modo_str,
                 "btc_razon": btc_context.get("razon_ventana", ""),
+                "btc_delta": btc_delta_str,
                 "pd_tipo": pd_tipo or "",
                 "pd_pct": f"{pd_pct:+.2f}" if pd_tipo else "",
                 "pd_rvol": f"{pd_rvol:.2f}" if pd_tipo else "",
@@ -1334,7 +1344,7 @@ def main():
     print("\n" + "=" * 70, flush=True)
     print("🚀 MULTI SMART — SOLO LONGs", flush=True)
     print(f"   Lista dinámica desde CoinBeacon (hasta {MAX_MONEDAS_DINAMICAS})", flush=True)
-    print(f"   BTC filtro: dir=UP + estado=FAVORABLE", flush=True)
+    print(f"   Filtro BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta>0 y RSI4h≥45", flush=True)
     print(f"   Smart línea: conf≥{SMART_LINE_SCORE_MIN} | dir≥{SMART_DIRECTION_SCORE_MIN_LONG} | score≥{SMART_TOTAL_SCORE_MIN}", flush=True)
     print(f"   Status: near breakout / broke up / retest holding / rising cerca (≤1.0%)", flush=True)
     print("=" * 70, flush=True)
@@ -1363,11 +1373,31 @@ def main():
         prev_btc=prev_btc
     )
 
-    # ═══ FILTRO BTC NIVEL 2: dir=UP Y estado=FAVORABLE ═══
+    # ═══ FILTRO BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta positivo ═══
     btc_dir = btc_context.get("btc_dir")
+    btc_modo = btc_context.get("btc_modo")
     btc_estado = btc_context.get("estado")
-    if btc_dir != "up" or btc_estado != "FAVORABLE":
-        print(f"\n⏸️ BTC no cumple (dir={btc_dir}, estado={btc_estado}) → saliendo sin analizar monedas.", flush=True)
+    btc_rsi4 = btc_context.get("rsi4")
+    btc_delta = btc_context.get("delta_2h")
+
+    permitir_longs = False
+    razon_filtro = ""
+
+    if btc_dir == "down":
+        razon_filtro = "BTC DOWN"
+    elif btc_dir == "flat":
+        razon_filtro = "BTC FLAT"
+    elif btc_modo == "fuerte" and btc_estado == "FAVORABLE":
+        permitir_longs = True
+        razon_filtro = "BTC UP FUERTE + FAVORABLE"
+    elif btc_modo == "indeciso" and btc_delta is not None and btc_delta > BTC_REBOTE_DELTA_MIN and btc_rsi4 is not None and btc_rsi4 >= BTC_REBOTE_RSI4H_MIN:
+        permitir_longs = True
+        razon_filtro = f"BTC UP INDECISO con delta {btc_delta:+.2f} (rebote temprano, RSI4h {btc_rsi4:.2f})"
+    else:
+        razon_filtro = f"BTC {btc_dir} {btc_modo} sin delta positivo (delta={btc_delta}, RSI4h={btc_rsi4})"
+
+    if not permitir_longs:
+        print(f"\n⏸️ {razon_filtro} → saliendo sin analizar monedas.", flush=True)
         now_ts = datetime.now(timezone.utc).timestamp()
         new_state = list(previous_state)
         new_state.append({
@@ -1380,6 +1410,8 @@ def main():
         guardar_estado(new_state)
         print("\n🏁 PROGRAMA TERMINADO (sin alertas)", flush=True)
         return
+
+    print(f"\n✅ {razon_filtro} → analizando monedas.", flush=True)
 
     print("\n📡 CARGANDO PUMP EVENTS", flush=True)
     pd_eventos = consultar_pumping_events()
@@ -1435,7 +1467,7 @@ def main():
     print("=" * 70, flush=True)
     print(f"Alertas nuevas: {sent_count}", flush=True)
     print(f"🟢 LONG: {long_count}", flush=True)
-    print(f"🧭 BTC: {btc_context.get('btc_dir', 'flat').upper()} {btc_context.get('btc_modo', 'neutro').upper()}", flush=True)
+    print(f"🧭 BTC: {btc_context.get('btc_dir', 'flat').upper()} {btc_context.get('btc_modo', 'neutro').upper()} | Δ2h {btc_context.get('delta_2h')}", flush=True)
     print(f"📡 Monedas analizadas: {len(monedas_a_analizar)}", flush=True)
     print("\n🏁 PROGRAMA TERMINADO", flush=True)
 
