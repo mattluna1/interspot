@@ -17,6 +17,7 @@ import requests
 # Filtro BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta>=0 o N/A
 # Fix: retest holding vale para support Y resistance
 # Umbrales: conf 6.0 | dir -20 | score 70 | status activo | dist ≤ 1.0%
+# Marca "R" si la alerta cae dentro de VENTANAS_ALERTA
 # ============================================================
 
 SYMBOLS = [
@@ -69,11 +70,47 @@ LIMA_OFFSET = timedelta(hours=-5)
 HORA_INICIO = 0
 HORA_FIN = 24
 
+# ═══ VENTANAS DE ALERTA (hora Lima) ═══
+# Si la alerta cae dentro de alguna de estas ventanas → se marca con " R"
+# No excluye ninguna alerta — siempre envía, solo añade la marca visual
+# Formato: [("HH:MM", "HH:MM"), ("HH:MM", "HH:MM"), ...]
+# Lista vacía [] → nunca añade la marca (comportamiento normal)
+#
+# EJEMPLO (descomenta y edita con tus horas):
+# VENTANAS_ALERTA = [
+#     ("18:30", "20:36"),
+#     ("20:54", "21:12"),
+#     ("21:30", "21:57"),
+#     ("22:06", "22:42"),
+#     ("22:51", "23:54"),
+#     ("00:12", "00:48"),
+# ]
+VENTANAS_ALERTA = []
+
 
 def hora_permite_envio():
     now_lima = datetime.now(timezone.utc) + LIMA_OFFSET
     hora = now_lima.hour
     return HORA_INICIO <= hora < HORA_FIN
+
+
+def en_ventana_alerta():
+    """Devuelve True si la hora Lima actual está dentro de alguna ventana."""
+    if not VENTANAS_ALERTA:
+        return False
+
+    now_lima = datetime.now(timezone.utc) + LIMA_OFFSET
+    hora_actual = now_lima.strftime("%H:%M")
+
+    def a_minutos(hhmm):
+        h, m = hhmm.split(":")
+        return int(h) * 60 + int(m)
+
+    min_actual = a_minutos(hora_actual)
+    for inicio, fin in VENTANAS_ALERTA:
+        if a_minutos(inicio) <= min_actual <= a_minutos(fin):
+            return True
+    return False
 
 
 COINBEACON_TRENDLINES_URL = "https://api.coinbeacon.io/detectors/trendlines"
@@ -1181,6 +1218,9 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
     now_ts = datetime.now(timezone.utc).timestamp()
     now_lima = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M:%S")
 
+    # Calcular una vez si estamos en ventana
+    marca_r = " R" if en_ventana_alerta() else ""
+
     for alert in alerts:
         symbol = alert["symbol"]
         line = alert["line"]
@@ -1265,7 +1305,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
 
         msg = (
             f"📊 MULTI SMART\n"
-            f"{emoji} {operacion} {symbol} [{tipo_op_txt}]\n"
+            f"{emoji} {operacion} {symbol} [{tipo_op_txt}]{marca_r}\n"
             f"📈 Precio actual: ${precio_actual:.6f}\n"
             f"📉 {tipo_linea}{flip_text} ({inclinacion})\n"
             f"   • TF: {line.get('timeframe', '')}\n"
@@ -1350,6 +1390,10 @@ def main():
     print(f"   Filtro BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta>=0 (o N/A) y RSI4h>={BTC_REBOTE_RSI4H_MIN}", flush=True)
     print(f"   Smart línea: conf>={SMART_LINE_SCORE_MIN} | dir>={SMART_DIRECTION_SCORE_MIN_LONG} | score>={SMART_TOTAL_SCORE_MIN}", flush=True)
     print(f"   Status: near breakout / broke up / retest holding (S y R) / rising cerca (<=1.0%)", flush=True)
+    if VENTANAS_ALERTA:
+        print(f"   Ventanas R activas: {VENTANAS_ALERTA}", flush=True)
+    else:
+        print(f"   Ventanas R: (vacías — sin marca R)", flush=True)
     print("=" * 70, flush=True)
 
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
