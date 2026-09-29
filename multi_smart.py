@@ -14,7 +14,7 @@ import requests
 
 # ============================================================
 # MULTI SMART — SOLO LONGs
-# Filtro BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta positivo
+# Filtro BTC v3 (fix delta=None): permite INDECISO en primera corrida
 # Umbrales: conf 6.5 | score 75 | status activo | distancia ≤ 1.0%
 # ============================================================
 
@@ -55,7 +55,7 @@ SMART_TOTAL_SCORE_MIN = 75
 
 # [FILTRO BTC v3] Umbrales
 BTC_REBOTE_RSI4H_MIN = 45    # RSI4h mínimo para considerar rebote temprano
-BTC_REBOTE_DELTA_MIN = 0.0   # delta_2h debe ser > 0 (RSI4h subiendo)
+BTC_REBOTE_DELTA_MIN = 0.0   # delta_2h debe ser >= 0 (RSI4h subiendo o plano)
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -811,7 +811,7 @@ def analizar_contexto_btc(btc_coin_data, btc_rsi_data, rsi4_anterior=None,
     if delta_2h is not None:
         print(f"   Δ2h = {delta_2h:+.2f}", flush=True)
     else:
-        print(f"   Δ2h = N/A (sin rsi4_anterior)", flush=True)
+        print(f"   Δ2h = N/A (sin rsi4_anterior en state)", flush=True)
 
     estado_btc = "FAVORABLE" if btc_rsi_ok else "DESFAVORABLE"
     print(f"📊 ESTADO BTC: {estado_btc}", flush=True)
@@ -1344,7 +1344,7 @@ def main():
     print("\n" + "=" * 70, flush=True)
     print("🚀 MULTI SMART — SOLO LONGs", flush=True)
     print(f"   Lista dinámica desde CoinBeacon (hasta {MAX_MONEDAS_DINAMICAS})", flush=True)
-    print(f"   Filtro BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta>0 y RSI4h≥45", flush=True)
+    print(f"   Filtro BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta>=0 (o N/A) y RSI4h>={BTC_REBOTE_RSI4H_MIN}", flush=True)
     print(f"   Smart línea: conf≥{SMART_LINE_SCORE_MIN} | dir≥{SMART_DIRECTION_SCORE_MIN_LONG} | score≥{SMART_TOTAL_SCORE_MIN}", flush=True)
     print(f"   Status: near breakout / broke up / retest holding / rising cerca (≤1.0%)", flush=True)
     print("=" * 70, flush=True)
@@ -1373,7 +1373,7 @@ def main():
         prev_btc=prev_btc
     )
 
-    # ═══ FILTRO BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta positivo ═══
+    # ═══ FILTRO BTC v3 (con fix delta=None) ═══
     btc_dir = btc_context.get("btc_dir")
     btc_modo = btc_context.get("btc_modo")
     btc_estado = btc_context.get("estado")
@@ -1390,11 +1390,18 @@ def main():
     elif btc_modo == "fuerte" and btc_estado == "FAVORABLE":
         permitir_longs = True
         razon_filtro = "BTC UP FUERTE + FAVORABLE"
-    elif btc_modo == "indeciso" and btc_delta is not None and btc_delta > BTC_REBOTE_DELTA_MIN and btc_rsi4 is not None and btc_rsi4 >= BTC_REBOTE_RSI4H_MIN:
-        permitir_longs = True
-        razon_filtro = f"BTC UP INDECISO con delta {btc_delta:+.2f} (rebote temprano, RSI4h {btc_rsi4:.2f})"
+    elif btc_modo == "indeciso" and btc_rsi4 is not None and btc_rsi4 >= BTC_REBOTE_RSI4H_MIN:
+        # [FIX A] delta=None (primera corrida) → permitir (beneficio de la duda)
+        # delta>=0 → permitir (rebote en curso)
+        # delta<0 → bloquear (girando a la baja)
+        if btc_delta is None or btc_delta >= BTC_REBOTE_DELTA_MIN:
+            permitir_longs = True
+            delta_txt = f"{btc_delta:+.2f}" if btc_delta is not None else "N/A (primera corrida)"
+            razon_filtro = f"BTC UP INDECISO (RSI4h {btc_rsi4:.2f}, delta {delta_txt})"
+        else:
+            razon_filtro = f"BTC UP INDECISO con delta negativo {btc_delta:+.2f}"
     else:
-        razon_filtro = f"BTC {btc_dir} {btc_modo} sin delta positivo (delta={btc_delta}, RSI4h={btc_rsi4})"
+        razon_filtro = f"BTC {btc_dir} {btc_modo} sin condiciones (delta={btc_delta}, RSI4h={btc_rsi4})"
 
     if not permitir_longs:
         print(f"\n⏸️ {razon_filtro} → saliendo sin analizar monedas.", flush=True)
