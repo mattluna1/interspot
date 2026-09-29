@@ -1,0 +1,22 @@
+name: Diagnóstico CoinBeacon
+
+on:
+  workflow_dispatch:  # Solo manual, no automático
+
+jobs:
+  diagnostico:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Ejecutar diagnóstico
+        env:
+          COINBEACON_TOKEN: ${{ secrets.COINBEACON_TOKEN }}
+        run: python diagnostico_coinbeacon.py
