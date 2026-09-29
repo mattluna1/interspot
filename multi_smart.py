@@ -1332,12 +1332,24 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         vol = alert["volume"]
         operacion = alert["bias"]
 
-        key = f"{symbol}_{line['type']}_{line['timeframe']}_{line['currentLevel']}"
-        exists = any(
-            f"{item.get('symbol')}_{item.get('type')}_{item.get('timeframe')}_{item.get('currentLevel')}" == key
-            for item in new_state
-        )
-        if exists:
+        # Anti-spam con tolerancia 0.3% (evita repetidas por microcambios de nivel)
+        nivel_nuevo = line.get("currentLevel") or 0
+        duplicado = False
+        for item in new_state:
+            if item.get("symbol") != symbol: continue
+            if item.get("type") != line.get("type"): continue
+            if item.get("timeframe") != line.get("timeframe"): continue
+            nivel_prev = item.get("currentLevel") or 0
+            if nivel_prev > 0 and nivel_nuevo > 0:
+                diff_pct = abs(nivel_nuevo - nivel_prev) / nivel_prev * 100
+                if diff_pct < 0.3:
+                    duplicado = True
+                    break
+            else:
+                duplicado = True
+                break
+
+        if duplicado:
             continue
 
         emoji = "🟢"
