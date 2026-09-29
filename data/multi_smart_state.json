@@ -1,16 +1,45 @@
 [
   {
-    "type": "btc_rsi",
-    "rsi4": 48.23,
-    "rsi1": 50.11,
-    "rsi15": 53.24,
-    "detected_at": 1790722592.933446
+    "symbol": "PYTH",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.07933,
+    "detected_at": 1790724295.361902,
+    "entry_price": 0.07907,
+    "tp1_nivel": 0.07982739130434784,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
+  },
+  {
+    "symbol": "ETH",
+    "type": "support",
+    "timeframe": "1h",
+    "currentLevel": 2671.624409448819,
+    "detected_at": 1790724295.361902,
+    "entry_price": 2686.44,
+    "tp1_nivel": 2696.9474999999993,
+    "tp2_nivel": 2753.3076923076924,
+    "tp1_hit": false,
+    "tp2_hit": false
+  },
+  {
+    "symbol": "SEI",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.07368636363636363,
+    "detected_at": 1790724295.361902,
+    "entry_price": 0.07372,
+    "tp1_nivel": null,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
   },
   {
     "type": "btc_rsi",
-    "rsi4": 48.01,
-    "rsi1": 49.7,
-    "rsi15": 52.24,
-    "detected_at": 1790722945.362674
+    "rsi4": 49.87,
+    "rsi1": 53.34,
+    "rsi15": 59.57,
+    "detected_at": 1790724209.266688
   }
 ]
