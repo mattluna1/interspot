@@ -7,13 +7,14 @@ import os
 import sys
 import urllib.parse
 import urllib.request
+import urllib.error
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import requests
 
 # ============================================================
-# MULTI SMART — CoinBeacon trendlines + Smart (bias + directionScore)
-# Lista dinámica | Filtros Smart | PD | BTC contexto
+# MULTI SMART — SOLO LONGs
+# Lista dinámica desde CoinBeacon | Filtros Smart | PD | BTC contexto
 # ============================================================
 
 SYMBOLS = [
@@ -49,7 +50,6 @@ PD_MIN_PCT = 2.0
 
 SMART_LINE_SCORE_MIN = 6.0
 SMART_DIRECTION_SCORE_MIN_LONG = -20
-SMART_DIRECTION_SCORE_MAX_SHORT = 20
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -57,7 +57,6 @@ DATA_DIR.mkdir(exist_ok=True)
 STATE_FILE = DATA_DIR / "multi_smart_state.json"
 CSV_FILE = DATA_DIR / "multi_smart.csv"
 HISTORICO_CSV_FILE = DATA_DIR / "multi_smart_historial_lineas.csv"
-CORRELACION_CSV_FILE = DATA_DIR / "multi_smart_correlacion.csv"
 
 LIMA_OFFSET = timedelta(hours=-5)
 HORA_INICIO = 0
@@ -99,6 +98,10 @@ def leer_cache_remoto(symbol):
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as r:
             data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            print(f"   ⚠️ cache remoto {symbol}: HTTP {e.code}", flush=True)
+        return None
     except Exception as e:
         print(f"   ⚠️ cache remoto {symbol}: {str(e)[:60]}", flush=True)
         return None
@@ -163,10 +166,9 @@ def extraer_rsi_del_cache(cache, incluir_4h=False):
 def consultar_pumping_events():
     token = os.environ.get("COINBEACON_TOKEN")
     if not token:
-        print("   ⚠️ COINBEACON_TOKEN no disponible para pump/dump", flush=True)
         return []
 
-    types = "pump_5m,dump_5m"
+    types = "pump_5m"
     url = f"{COINBEACON_PUMPING_URL}?exchange=binance&types={types}&pair=USDT&limit=500"
 
     headers = {
@@ -180,7 +182,7 @@ def consultar_pumping_events():
             data = json.loads(r.read().decode("utf-8"))
         return data.get("items", [])
     except Exception as e:
-        print(f"   ⚠️ pump/dump events: {str(e)[:80]}", flush=True)
+        print(f"   ⚠️ pump events: {str(e)[:80]}", flush=True)
         return []
 
 
@@ -234,7 +236,7 @@ def pd_para_symbol(symbol, pd_index):
     edad_min = (ahora_ts * 1000 - mejor_ts) / 60000
 
     resultado["tipo"] = mejor.get("type")
-    resultado["direccion"] = "up" if "pump" in str(mejor.get("type", "")) else "down"
+    resultado["direccion"] = "up"
     resultado["pct"] = mejor.get("pct", 0.0)
     resultado["rvol"] = mejor.get("rvol", 0.0)
     resultado["vol_conf"] = mejor.get("volConfirmed", False)
@@ -322,15 +324,22 @@ def obtener_monedas_recomendadas(timeframe="15m", limit=MAX_MONEDAS_DINAMICAS):
 
     monedas = []
     vistos = set()
+    descartadas = 0
     for item in items:
         symbol = str(item.get("symbol", "")).upper()
         if not symbol.endswith("USDT"):
             continue
         base = symbol.replace("USDT", "")
+        if not base.isascii():
+            descartadas += 1
+            continue
         if base in EXCLUIR or base in vistos:
             continue
         vistos.add(base)
         monedas.append(base)
+
+    if descartadas > 0:
+        print(f"   (descartados {descartadas} símbolos no-ASCII)", flush=True)
 
     if not monedas:
         print("⚠️ Ninguna moneda válida tras filtrar. Usando lista estática.", flush=True)
@@ -717,7 +726,6 @@ def analizar_contexto_btc(btc_coin_data, btc_rsi_data, rsi4_anterior=None,
     D_DOWN_FUERTE   = -0.34
 
     btc_dir, btc_modo, razon = "flat", "neutro", "neutro"
-    score_min_req = 0.0
 
     if rsi4 is None:
         razon = "RSI4h N/A"
@@ -725,30 +733,25 @@ def analizar_contexto_btc(btc_coin_data, btc_rsi_data, rsi4_anterior=None,
         if impulso_down_corto:
             btc_dir, btc_modo = "down", "indeciso"
             razon = "sobrecompra + impulso 15m DOWN"
-            score_min_req = SCORE_MIN_INDECISO
         elif delta_2h is None:
             razon = "sobrecompra sin delta"
         elif delta_2h > D_UP_FUERTE:
             btc_dir, btc_modo = "up", "fuerte"; razon = f"sobrecompra Δ{delta_2h:+.2f}"
         elif delta_2h > D_UP_INDECISO:
             btc_dir, btc_modo = "up", "indeciso"; razon = f"sobrecompra Δ{delta_2h:+.2f}"
-            score_min_req = SCORE_MIN_INDECISO
         elif delta_2h < D_DOWN_FUERTE:
             btc_dir, btc_modo = "down", "fuerte"; razon = f"sobrecompra Δ{delta_2h:+.2f} gira"
         elif delta_2h < D_DOWN_INDECISO:
             btc_dir, btc_modo = "down", "indeciso"; razon = f"sobrecompra Δ{delta_2h:+.2f}"
-            score_min_req = SCORE_MIN_INDECISO
         else:
             razon = f"sobrecompra Δ{delta_2h:+.2f} neutro"
     elif rsi4 >= RSI_CENTRAL:
         if impulso_down_corto:
             btc_dir, btc_modo = "down", "indeciso"
             razon = "alta saludable + impulso 15m DOWN"
-            score_min_req = SCORE_MIN_REBOTE
         elif delta_2h is not None and delta_2h < -DELTA_CRUCE:
             btc_dir, btc_modo = "down", "indeciso"
             razon = f"alta saludable Δ{delta_2h:+.2f} gira DOWN"
-            score_min_req = SCORE_MIN_REBOTE
         else:
             btc_dir, btc_modo = "up", "fuerte"
             razon = f"RSI4h {rsi4:.2f} alta saludable"
@@ -756,34 +759,28 @@ def analizar_contexto_btc(btc_coin_data, btc_rsi_data, rsi4_anterior=None,
         if impulso_up_corto:
             btc_dir, btc_modo = "up", "indeciso"
             razon = "central + impulso 15m UP"
-            score_min_req = SCORE_MIN_INDECISO
         elif impulso_down_corto:
             btc_dir, btc_modo = "down", "indeciso"
             razon = "central + impulso 15m DOWN"
-            score_min_req = SCORE_MIN_INDECISO
         elif delta_2h is None:
             razon = "central sin delta"
         elif delta_2h > D_UP_FUERTE:
             btc_dir, btc_modo = "up", "fuerte"; razon = f"central Δ{delta_2h:+.2f}"
         elif delta_2h > D_UP_INDECISO:
             btc_dir, btc_modo = "up", "indeciso"; razon = f"central Δ{delta_2h:+.2f}"
-            score_min_req = SCORE_MIN_INDECISO
         elif delta_2h < D_DOWN_FUERTE:
             btc_dir, btc_modo = "down", "fuerte"; razon = f"central Δ{delta_2h:+.2f}"
         elif delta_2h < D_DOWN_INDECISO:
             btc_dir, btc_modo = "down", "indeciso"; razon = f"central Δ{delta_2h:+.2f}"
-            score_min_req = SCORE_MIN_INDECISO
         else:
             razon = f"central Δ{delta_2h:+.2f} neutro"
     elif rsi4 >= RSI_SOBREVENTA:
         if impulso_up_corto:
             btc_dir, btc_modo = "up", "indeciso"
             razon = "baja saludable + impulso 15m UP"
-            score_min_req = SCORE_MIN_REBOTE
         elif delta_2h is not None and delta_2h > DELTA_CRUCE:
             btc_dir, btc_modo = "up", "indeciso"
             razon = f"baja saludable Δ{delta_2h:+.2f} gira UP"
-            score_min_req = SCORE_MIN_REBOTE
         else:
             btc_dir, btc_modo = "down", "fuerte"
             razon = f"RSI4h {rsi4:.2f} baja saludable"
@@ -791,19 +788,16 @@ def analizar_contexto_btc(btc_coin_data, btc_rsi_data, rsi4_anterior=None,
         if impulso_up_corto:
             btc_dir, btc_modo = "up", "indeciso"
             razon = "sobreventa + impulso 15m UP"
-            score_min_req = SCORE_MIN_INDECISO
         elif delta_2h is None:
             razon = "sobreventa sin delta"
         elif delta_2h < D_DOWN_FUERTE:
             btc_dir, btc_modo = "down", "fuerte"; razon = f"sobreventa Δ{delta_2h:+.2f} sigue"
         elif delta_2h < D_DOWN_INDECISO:
             btc_dir, btc_modo = "down", "indeciso"; razon = f"sobreventa Δ{delta_2h:+.2f}"
-            score_min_req = SCORE_MIN_INDECISO
         elif delta_2h > D_UP_FUERTE:
             btc_dir, btc_modo = "up", "fuerte"; razon = f"sobreventa Δ{delta_2h:+.2f} gira"
         elif delta_2h > D_UP_INDECISO:
             btc_dir, btc_modo = "up", "indeciso"; razon = f"sobreventa Δ{delta_2h:+.2f}"
-            score_min_req = SCORE_MIN_INDECISO
         else:
             razon = f"sobreventa Δ{delta_2h:+.2f} neutro"
 
@@ -827,7 +821,6 @@ def analizar_contexto_btc(btc_coin_data, btc_rsi_data, rsi4_anterior=None,
         "delta_2h": delta_2h,
         "impulso_up_corto": impulso_up_corto,
         "impulso_down_corto": impulso_down_corto,
-        "score_min_requerido": score_min_req,
     }
 
 
@@ -983,17 +976,17 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
     tendencia_1h = rsi_data.get("1h", {}).get("tendencia") if rsi_data else None
 
     print(f"\n🧭 BTC {btc_dir.upper()} {btc_modo.upper()}", flush=True)
-    if btc_modo == "neutro":
-        print(f"   ⏸️ BTC NEUTRO → esperar", flush=True)
+
+    # ═══ BOT SOLO LONGs ═══
+    if btc_dir != "up":
+        print(f"   ⏸️ BTC no está UP → solo LONGs, esperar.", flush=True)
         return []
 
-    operacion_permitida = "LONG" if btc_dir == "up" else "SHORT"
+    operacion_permitida = "LONG"
 
     pd = pd_para_symbol(symbol, pd_index or {})
     if pd["activo"]:
         print(f"   📊 PD activo: {pd['tipo']} {pd['pct']:+.2f}% rvol={pd['rvol']:.2f}", flush=True)
-
-    score_min_req = btc_context.get("score_min_requerido", 0.0)
 
     volume = volume_by_symbol.get(symbol + "USDT") or volume_by_symbol.get(symbol)
     if volume:
@@ -1028,25 +1021,15 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             continue
 
         bias_linea = str(linea.get("bias", "")).lower()
-        dir_score = linea.get("direction_score")
-        if dir_score is None:
-            dir_score = 0
+        dir_score = linea.get("direction_score") or 0
 
-        if operacion_permitida == "LONG":
-            if bias_linea == "bearish":
-                print(f"   ⏭️ {symbol} {linea.get('timeframe')} LONG bloqueado: bias=BEARISH", flush=True)
-                continue
-            if dir_score < SMART_DIRECTION_SCORE_MIN_LONG:
-                print(f"   ⏭️ {symbol} {linea.get('timeframe')} LONG bloqueado: dirScore {dir_score:.0f} < {SMART_DIRECTION_SCORE_MIN_LONG}", flush=True)
-                continue
-
-        if operacion_permitida == "SHORT":
-            if bias_linea == "bullish":
-                print(f"   ⏭️ {symbol} {linea.get('timeframe')} SHORT bloqueado: bias=BULLISH", flush=True)
-                continue
-            if dir_score > SMART_DIRECTION_SCORE_MAX_SHORT:
-                print(f"   ⏭️ {symbol} {linea.get('timeframe')} SHORT bloqueado: dirScore {dir_score:.0f} > {SMART_DIRECTION_SCORE_MAX_SHORT}", flush=True)
-                continue
+        # Filtros Smart para LONG
+        if bias_linea == "bearish":
+            print(f"   ⏭️ {symbol} {linea.get('timeframe')} LONG bloqueado: bias=BEARISH", flush=True)
+            continue
+        if dir_score < SMART_DIRECTION_SCORE_MIN_LONG:
+            print(f"   ⏭️ {symbol} {linea.get('timeframe')} LONG bloqueado: dirScore {dir_score:.0f} < {SMART_DIRECTION_SCORE_MIN_LONG}", flush=True)
+            continue
 
         tf = linea.get("timeframe")
         if tf == "1h":
@@ -1059,10 +1042,10 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         if abs(distancia) > max_dist:
             continue
 
+        # Para LONG necesitamos que la tendencia del alt sea "up"
+        # y la línea sea resistencia rota a la baja (soporte efectivo)
         if tendencia == "up":
             nivel_esperado = "resistance"
-        elif tendencia == "down":
-            nivel_esperado = "support"
         else:
             continue
 
@@ -1075,27 +1058,20 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         if tipo_efectivo != nivel_esperado:
             continue
 
-        operacion = operacion_permitida
+        operacion = "LONG"
         total_score = linea.get("total_score", 0)
 
+        # PD: si hay dump activo, bloquear LONG (a menos que sea reversal)
         if pd["activo"]:
-            if operacion == "LONG" and pd["direccion"] == "down" and not pd["reversal"]:
-                continue
-            if operacion == "SHORT" and pd["direccion"] == "up" and not pd["reversal"]:
+            if pd["direccion"] == "down" and not pd["reversal"]:
+                print(f"   ⏭️ {symbol} {tf} LONG bloqueado: PD dump {pd['pct']:+.2f}%", flush=True)
                 continue
 
         pd_confirmado = False
-        if pd["activo"]:
-            if operacion == "LONG" and pd["direccion"] == "up":
-                pd_confirmado = True
-            if operacion == "SHORT" and pd["direccion"] == "down":
-                pd_confirmado = True
+        if pd["activo"] and pd["direccion"] == "up":
+            pd_confirmado = True
 
-        if score_min_req > 0 and total_score < score_min_req:
-            if not pd_confirmado:
-                continue
-
-        print(f"   ✅ {symbol} {tf} | {operacion} | dist {distancia:+.2f}% | score {total_score:.1f} | conf {confidence:.1f} | dir {dir_score:.0f} | bias {bias_linea}", flush=True)
+        print(f"   ✅ {symbol} {tf} | LONG | dist {distancia:+.2f}% | score {total_score:.1f} | conf {confidence:.1f} | dir {dir_score:.0f} | bias {bias_linea}", flush=True)
 
         candidates_by_tf.setdefault(tf, []).append({
             "line": linea,
@@ -1128,7 +1104,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
     alerts = []
     for cand in filtered:
         linea = cand["line"]
-        operacion = cand["operacion"]
         total_score = cand["score"]
 
         alert = {
@@ -1142,7 +1117,7 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             "is_near_breakout": "near breakout" in str(linea.get("status", "")).lower(),
             "is_near_breakdown": "near breakdown" in str(linea.get("status", "")).lower(),
             "is_retest": "retest" in str(linea.get("status", "")).lower(),
-            "bias": operacion,
+            "bias": "LONG",
             "tipo_efectivo": cand.get("tipo_efectivo"),
             "rsi1h": rsi_data.get("1h", {}).get("rsi14") if rsi_data else None,
             "rsi15m": rsi_data.get("15m", {}).get("rsi14") if rsi_data else None,
@@ -1171,11 +1146,11 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         alerts.append(alert)
 
     if alerts:
-        print(f"\n   ⭐ {len(alerts)} alerta(s)", flush=True)
+        print(f"\n   ⭐ {len(alerts)} LONG(s)", flush=True)
         for a in alerts:
-            print(f"      {a['bias']} | {a['line']['timeframe']} | conf {a['smart_confidence']:.1f} | dir {a['smart_direction']:.0f} | bias {a['smart_bias']}", flush=True)
+            print(f"      LONG | {a['line']['timeframe']} | conf {a['smart_confidence']:.1f} | dir {a['smart_direction']:.0f} | bias {a['smart_bias']}", flush=True)
     else:
-        print("\n   ⚪ Sin alertas.", flush=True)
+        print("\n   ⚪ Sin alertas LONG.", flush=True)
 
     return alerts
 
@@ -1183,7 +1158,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
 def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
     sent_count = 0
     long_count = 0
-    short_count = 0
     new_state = list(filtered_previous)
     now_ts = datetime.now(timezone.utc).timestamp()
     now_lima = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M:%S")
@@ -1202,11 +1176,8 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         if exists:
             continue
 
-        emoji = "🟢" if operacion == "LONG" else "🔴" if operacion == "SHORT" else "⚪"
-        if operacion == "LONG":
-            long_count += 1
-        elif operacion == "SHORT":
-            short_count += 1
+        emoji = "🟢"
+        long_count += 1
 
         tipo_linea = (line.get("type") or "desconocido").upper()
         tipo_efectivo = (alert.get("tipo_efectivo") or line.get("type") or "").upper()
@@ -1253,8 +1224,8 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         pd_confirmado = alert.get("pd_confirmado", False)
 
         if pd_tipo:
-            flecha_pd = "🚀" if "pump" in pd_tipo else "💥"
-            tipo_pd_str = "PUMP 5m" if "pump" in pd_tipo else "DUMP 5m"
+            flecha_pd = "🚀"
+            tipo_pd_str = "PUMP 5m"
             vol_mark = " ⚡" if pd_vol_conf else ""
             confirm = " ✅ CONFIRMA" if pd_confirmado else ""
             pd_linea = f"📡 PD: {flecha_pd} {tipo_pd_str} {pd_pct:+.2f}% (rvol {pd_rvol:.2f}){vol_mark}{confirm}"
@@ -1271,7 +1242,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         smart_linea = f"🧠 Smart: {smart_conf_str} | Dir {smart_dir_str} | Bias {str(smart_bias).upper()} | Score {smart_line_score_str}"
 
         msg = (
-            f"📊 MULTI SMART — CoinBeacon + Smart\n"
+            f"📊 MULTI SMART\n"
             f"{emoji} {operacion} {symbol}\n"
             f"📈 Precio actual: ${precio_actual:.6f}\n"
             f"📉 {tipo_linea}{flip_text} ({inclinacion})\n"
@@ -1326,7 +1297,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
                 "currentLevel": nivel_linea, "detected_at": now_ts,
             })
 
-    return sent_count, long_count, short_count, new_state
+    return sent_count, long_count, new_state
 
 
 def analizar_moneda(symbol, volume_by_symbol, btc_context, btc_rsi_data, hora_lima, pd_index=None):
@@ -1351,9 +1322,9 @@ def analizar_moneda(symbol, volume_by_symbol, btc_context, btc_rsi_data, hora_li
 
 def main():
     print("\n" + "=" * 70, flush=True)
-    print("🚀 MULTI SMART — CoinBeacon + Smart", flush=True)
+    print("🚀 MULTI SMART — SOLO LONGs", flush=True)
     print(f"   Lista dinámica desde CoinBeacon (hasta {MAX_MONEDAS_DINAMICAS})", flush=True)
-    print(f"   Smart: conf≥{SMART_LINE_SCORE_MIN} | LONG si dir≥{SMART_DIRECTION_SCORE_MIN_LONG} | SHORT si dir≤{SMART_DIRECTION_SCORE_MAX_SHORT}", flush=True)
+    print(f"   Smart: conf≥{SMART_LINE_SCORE_MIN} | dir≥{SMART_DIRECTION_SCORE_MIN_LONG} para LONG", flush=True)
     print("=" * 70, flush=True)
 
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
@@ -1380,7 +1351,23 @@ def main():
         prev_btc=prev_btc
     )
 
-    print("\n📡 CARGANDO PUMP/DUMP EVENTS", flush=True)
+    # Si BTC no está UP, salir temprano (bot solo LONGs)
+    if btc_context.get("btc_dir") != "up":
+        print(f"\n⏸️ BTC NO está UP → bot solo LONGs. Saliendo sin analizar monedas.", flush=True)
+        now_ts = datetime.now(timezone.utc).timestamp()
+        new_state = list(previous_state)
+        new_state.append({
+            "type": "btc_rsi",
+            "rsi4":  btc_context.get("rsi4"),
+            "rsi1":  btc_context.get("rsi1"),
+            "rsi15": btc_context.get("rsi15"),
+            "detected_at": now_ts,
+        })
+        guardar_estado(new_state)
+        print("\n🏁 PROGRAMA TERMINADO (sin alertas)", flush=True)
+        return
+
+    print("\n📡 CARGANDO PUMP EVENTS", flush=True)
     pd_eventos = consultar_pumping_events()
     print(f"   Eventos: {len(pd_eventos)}", flush=True)
     pd_index = indexar_pumping_events(pd_eventos)
@@ -1414,9 +1401,9 @@ def main():
         alerts, _, _ = analizar_moneda(symbol, volume_by_symbol, btc_context, btc_rsi_data, hora_lima, pd_index)
         all_alerts.extend(alerts)
 
-    all_alerts.sort(key=lambda x: (0 if x["bias"] == "LONG" else 1, -x["score"]))
+    all_alerts.sort(key=lambda x: -x["score"])
 
-    sent_count, long_count, short_count, new_state = procesar_alertas(
+    sent_count, long_count, new_state = procesar_alertas(
         all_alerts, alertas_previas, btc_context, pd_index
     )
 
@@ -1434,7 +1421,6 @@ def main():
     print("=" * 70, flush=True)
     print(f"Alertas nuevas: {sent_count}", flush=True)
     print(f"🟢 LONG: {long_count}", flush=True)
-    print(f"🔴 SHORT: {short_count}", flush=True)
     print(f"🧭 BTC: {btc_context.get('btc_dir', 'flat').upper()} {btc_context.get('btc_modo', 'neutro').upper()}", flush=True)
     print(f"📡 Monedas analizadas: {len(monedas_a_analizar)}", flush=True)
     print("\n🏁 PROGRAMA TERMINADO", flush=True)
