@@ -15,9 +15,9 @@ import requests
 # ============================================================
 # MULTI SMART — SOLO LONGs
 # Filtro BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta>=0 o N/A
-# Fix: retest holding vale para support Y resistance
-# Umbrales: conf 6.0 | dir -20 | score 70 | status activo | dist ≤ 1.0%
-# Marca "R" si la alerta cae dentro de VENTANAS_ALERTA
+# TP desde CoinBeacon: 2 resistencias más cercanas
+# Aviso al tocar TP1/TP2 + limpieza state para re-alerta
+# Umbrales: conf 6.0 | dir -20 | score 70 | dist ≤ 1.0%
 # ============================================================
 
 SYMBOLS = [
@@ -65,52 +65,17 @@ DATA_DIR.mkdir(exist_ok=True)
 STATE_FILE = DATA_DIR / "multi_smart_state.json"
 CSV_FILE = DATA_DIR / "multi_smart.csv"
 HISTORICO_CSV_FILE = DATA_DIR / "multi_smart_historial_lineas.csv"
+TP_CSV_FILE = DATA_DIR / "multi_smart_tps.csv"
 
 LIMA_OFFSET = timedelta(hours=-5)
 HORA_INICIO = 0
 HORA_FIN = 24
-
-# ═══ VENTANAS DE ALERTA (hora Lima) ═══
-# Si la alerta cae dentro de alguna de estas ventanas → se marca con " R"
-# No excluye ninguna alerta — siempre envía, solo añade la marca visual
-# Formato: [("HH:MM", "HH:MM"), ("HH:MM", "HH:MM"), ...]
-# Lista vacía [] → nunca añade la marca (comportamiento normal)
-#
-# EJEMPLO (descomenta y edita con tus horas):
-# VENTANAS_ALERTA = [
-#     ("18:30", "20:36"),
-#     ("20:54", "21:12"),
-#     ("21:30", "21:57"),
-#     ("22:06", "22:42"),
-#     ("22:51", "23:54"),
-#     ("00:12", "00:48"),
-# ]
-VENTANAS_ALERTA = []
 
 
 def hora_permite_envio():
     now_lima = datetime.now(timezone.utc) + LIMA_OFFSET
     hora = now_lima.hour
     return HORA_INICIO <= hora < HORA_FIN
-
-
-def en_ventana_alerta():
-    """Devuelve True si la hora Lima actual está dentro de alguna ventana."""
-    if not VENTANAS_ALERTA:
-        return False
-
-    now_lima = datetime.now(timezone.utc) + LIMA_OFFSET
-    hora_actual = now_lima.strftime("%H:%M")
-
-    def a_minutos(hhmm):
-        h, m = hhmm.split(":")
-        return int(h) * 60 + int(m)
-
-    min_actual = a_minutos(hora_actual)
-    for inicio, fin in VENTANAS_ALERTA:
-        if a_minutos(inicio) <= min_actual <= a_minutos(fin):
-            return True
-    return False
 
 
 COINBEACON_TRENDLINES_URL = "https://api.coinbeacon.io/detectors/trendlines"
@@ -572,6 +537,33 @@ def analizar_coinbeacon(symbol):
     return {"price": precio, "lines": todas}
 
 
+def obtener_resistencias_cercanas(lineas, precio_actual, max_items=2):
+    """
+    Devuelve las 2 resistencias más cercanas POR ENCIMA del precio actual.
+    Vienen directamente de CoinBeacon, no se calculan.
+    """
+    if not lineas or precio_actual is None:
+        return []
+
+    resistencias = []
+    for linea in lineas:
+        if linea.get("type") != "resistance":
+            continue
+        nivel = linea.get("currentLevel")
+        if nivel is None or nivel <= precio_actual:
+            continue
+        distancia_pct = ((nivel - precio_actual) / precio_actual) * 100
+        resistencias.append({
+            "nivel": nivel,
+            "distancia_pct": distancia_pct,
+            "timeframe": linea.get("timeframe"),
+            "confianza": linea.get("confidence"),
+        })
+
+    resistencias.sort(key=lambda x: x["distancia_pct"])
+    return resistencias[:max_items]
+
+
 def obtener_precios_coingecko(symbol, days=7):
     coin_id = COINGECKO_IDS.get(symbol)
     if not coin_id:
@@ -904,6 +896,7 @@ def guardar_en_csv(alert_data):
         "btc_dir", "btc_modo", "btc_razon", "btc_delta",
         "pd_tipo", "pd_pct", "pd_rvol", "pd_conf",
         "smart_direction", "smart_line_score",
+        "tp1_nivel", "tp1_dist", "tp2_nivel", "tp2_dist",
         "structure_quality", "total_score"
     ]
     if not CSV_FILE.exists():
@@ -913,6 +906,20 @@ def guardar_en_csv(alert_data):
     with CSV_FILE.open("a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writerow(alert_data)
+
+
+def guardar_tp_csv(tp_data):
+    fieldnames = [
+        "hora_lima", "symbol", "tp_num", "tp_nivel", "entry_price",
+        "precio_actual", "ganancia_pct", "detected_at_signal"
+    ]
+    if not TP_CSV_FILE.exists():
+        with TP_CSV_FILE.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+    with TP_CSV_FILE.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writerow(tp_data)
 
 
 def guardar_historico_linea(symbol, linea, rsi_data, btc_rsi_data, hora_lima, tipo_efectivo=None):
@@ -997,6 +1004,110 @@ def _prioridad_patron(linea):
     return 0
 
 
+def revisar_tps_pendientes(previous_state):
+    """
+    Revisa el state: si alguna moneda alcanzó su TP1 o TP2, avisa.
+    - TP1 alcanzado → marca tp1_hit y avisa
+    - TP2 alcanzado → avisa y ELIMINA del state (permite re-alerta en pullback)
+    Devuelve: (nuevo_state, avisos_enviados)
+    """
+    ahora_lima = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M:%S")
+    nuevo_state = []
+    avisos = 0
+
+    print("\n" + "=" * 70, flush=True)
+    print("🎯 REVISANDO TPs PENDIENTES", flush=True)
+    print("=" * 70, flush=True)
+
+    for item in previous_state:
+        # Preservar el btc_rsi sin tocar
+        if item.get("type") == "btc_rsi":
+            nuevo_state.append(item)
+            continue
+
+        symbol = item.get("symbol")
+        tp1 = item.get("tp1_nivel")
+        tp2 = item.get("tp2_nivel")
+        entry = item.get("entry_price")
+        tp1_hit = item.get("tp1_hit", False)
+        tp2_hit = item.get("tp2_hit", False)
+
+        # Si no hay TPs registrados, mantener sin cambios
+        if tp1 is None and tp2 is None:
+            nuevo_state.append(item)
+            continue
+
+        # Obtener precio actual del cache
+        cache = leer_cache_remoto(symbol)
+        precio_actual = cache.get("price") if cache else None
+
+        if precio_actual is None:
+            nuevo_state.append(item)
+            continue
+
+        print(f"\n   {symbol}: precio ${precio_actual:.6f} | entry ${entry} | TP1 ${tp1} | TP2 ${tp2}", flush=True)
+
+        # Comprobar TP2 (más lejano)
+        if tp2 is not None and precio_actual >= tp2 and not tp2_hit:
+            print(f"   🎉 {symbol} ALCANZÓ TP2", flush=True)
+            msg = (
+                f"🎉 TP2 ALCANZADO — {symbol}\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"📈 Precio actual: ${precio_actual:.6f}\n"
+                f"🎯 TP2: ${tp2:.6f}\n"
+                f"💰 Entrada: ${entry:.6f}\n"
+                f"📈 Ganancia: {((precio_actual - entry) / entry) * 100:+.2f}%\n"
+                f"🔓 Se libera para re-alerta en próximo pullback\n"
+                f"🕐 {ahora_lima}\n"
+                f"━━━━━━━━━━━━━━━━━━━"
+            )
+            if send_telegram_message(msg):
+                avisos += 1
+                guardar_tp_csv({
+                    "hora_lima": ahora_lima, "symbol": symbol,
+                    "tp_num": 2, "tp_nivel": f"{tp2:.6f}",
+                    "entry_price": f"{entry:.6f}",
+                    "precio_actual": f"{precio_actual:.6f}",
+                    "ganancia_pct": f"{((precio_actual - entry) / entry) * 100:+.2f}",
+                    "detected_at_signal": item.get("detected_at", ""),
+                })
+            # NO añadir a nuevo_state → se elimina → permite re-alerta
+            continue
+
+        # Comprobar TP1
+        if tp1 is not None and precio_actual >= tp1 and not tp1_hit:
+            print(f"   ✅ {symbol} ALCANZÓ TP1", flush=True)
+            msg = (
+                f"✅ TP1 ALCANZADO — {symbol}\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"📈 Precio actual: ${precio_actual:.6f}\n"
+                f"🎯 TP1: ${tp1:.6f}\n"
+                f"💰 Entrada: ${entry:.6f}\n"
+                f"📈 Ganancia: {((precio_actual - entry) / entry) * 100:+.2f}%\n"
+                f"🎯 Próximo objetivo TP2: ${tp2:.6f}\n" if tp2 else ""
+                f"🕐 {ahora_lima}\n"
+                f"━━━━━━━━━━━━━━━━━━━"
+            )
+            if send_telegram_message(msg):
+                avisos += 1
+                guardar_tp_csv({
+                    "hora_lima": ahora_lima, "symbol": symbol,
+                    "tp_num": 1, "tp_nivel": f"{tp1:.6f}",
+                    "entry_price": f"{entry:.6f}",
+                    "precio_actual": f"{precio_actual:.6f}",
+                    "ganancia_pct": f"{((precio_actual - entry) / entry) * 100:+.2f}",
+                    "detected_at_signal": item.get("detected_at", ""),
+                })
+            item["tp1_hit"] = True
+            nuevo_state.append(item)
+            continue
+
+        nuevo_state.append(item)
+
+    print(f"\n   Avisos TP enviados: {avisos}", flush=True)
+    return nuevo_state, avisos
+
+
 def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
                          btc_context, pd_index=None):
     print(f"\n🎯 CONFLUENCIA — {symbol}", flush=True)
@@ -1024,7 +1135,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
 
     print(f"\n🧭 BTC {btc_dir.upper()} {btc_modo.upper()}", flush=True)
 
-    # ═══ BOT SOLO LONGs ═══
     if btc_dir != "up":
         print(f"   ⏸️ BTC no está UP → solo LONGs, esperar.", flush=True)
         return []
@@ -1057,7 +1167,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         status = str(linea.get("status", "")).lower()
         inclinacion = str(linea.get("fallingOrRising", "")).lower()
 
-        # ═══ 1) Descartar status malos para LONG ═══
         if "broke down" in status:
             continue
         if "failed break" in status:
@@ -1065,16 +1174,11 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         if "near breakdown" in status:
             continue
 
-        # ═══ 2) Clasificar operación apta para LONG ═══
-        # [FIX] retest holding vale para support Y resistance
         tipo_operacion = None
-        # Breakout al alza (solo resistance)
         if tipo == "resistance" and ("near breakout" in status or "broke up" in status):
             tipo_operacion = "breakout"
-        # Retest holding (support Y resistance)
         elif "retest" in status and "holding" in status:
             tipo_operacion = "rebote"
-        # Soporte rising cerca (solo support)
         elif tipo == "support" and inclinacion == "rising" and abs(distancia) <= 1.0:
             tipo_operacion = "rebote"
 
@@ -1100,11 +1204,9 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             print(f"   ⏭️ {symbol} {linea.get('timeframe')} LONG bloqueado: dirScore {dir_score:.0f} < {SMART_DIRECTION_SCORE_MIN_LONG}", flush=True)
             continue
 
-        # ═══ 3) Distancia máxima 1.0% ═══
         if abs(distancia) > 1.0:
             continue
 
-        # ═══ 4) Score interno mínimo ═══
         total_score = linea.get("total_score", 0)
         if total_score < SMART_TOTAL_SCORE_MIN:
             print(f"   ⏭️ {symbol} {linea.get('timeframe')} score {total_score:.1f} < {SMART_TOTAL_SCORE_MIN} → sin alerta", flush=True)
@@ -1155,6 +1257,11 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         seen_symbols.add(sym)
         filtered.append(cand)
 
+    # Obtener las 2 resistencias más cercanas para usarlas como TP
+    resistencias_cercanas = obtener_resistencias_cercanas(lineas, precio, max_items=2)
+    tp1 = resistencias_cercanas[0] if len(resistencias_cercanas) > 0 else None
+    tp2 = resistencias_cercanas[1] if len(resistencias_cercanas) > 1 else None
+
     alerts = []
     for cand in filtered:
         linea = cand["line"]
@@ -1198,6 +1305,9 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             "smart_direction": linea.get("direction_score"),
             "smart_bias": linea.get("bias"),
             "smart_line_score": linea.get("line_score"),
+            "tp1": tp1,
+            "tp2": tp2,
+            "entry_price": linea.get("price"),
         }
         alerts.append(alert)
 
@@ -1205,8 +1315,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         print(f"\n   ⭐ {len(alerts)} LONG(s)", flush=True)
         for a in alerts:
             print(f"      LONG | {a['line']['timeframe']} | conf {a['smart_confidence']:.1f} | dir {a['smart_direction']:.0f} | bias {a['smart_bias']} | score {a['score']:.1f}", flush=True)
-    else:
-        print("\n   ⚪ Sin alertas LONG.", flush=True)
 
     return alerts
 
@@ -1217,9 +1325,6 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
     new_state = list(filtered_previous)
     now_ts = datetime.now(timezone.utc).timestamp()
     now_lima = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M:%S")
-
-    # Calcular una vez si estamos en ventana
-    marca_r = " R" if en_ventana_alerta() else ""
 
     for alert in alerts:
         symbol = alert["symbol"]
@@ -1303,15 +1408,30 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         smart_line_score_str = f"{smart_line_score:.1f}" if smart_line_score is not None else "N/A"
         smart_linea = f"🧠 Smart: {smart_conf_str} | Dir {smart_dir_str} | Bias {str(smart_bias).upper()} | Score {smart_line_score_str}"
 
+        # TPs (vienen de CoinBeacon, no se calculan)
+        tp1 = alert.get("tp1")
+        tp2 = alert.get("tp2")
+        entry_price = alert.get("entry_price") or precio_actual
+
+        lineas_tp = []
+        if tp1:
+            ganancia_tp1 = ((tp1["nivel"] - entry_price) / entry_price) * 100
+            lineas_tp.append(f"🎯 TP1 ({tp1['timeframe']}): ${tp1['nivel']:.6f} ({ganancia_tp1:+.2f}%)")
+        if tp2:
+            ganancia_tp2 = ((tp2["nivel"] - entry_price) / entry_price) * 100
+            lineas_tp.append(f"🎯 TP2 ({tp2['timeframe']}): ${tp2['nivel']:.6f} ({ganancia_tp2:+.2f}%)")
+        tp_texto = "\n".join(lineas_tp) if lineas_tp else "🎯 TP: sin resistencias cercanas en CoinBeacon"
+
         msg = (
             f"📊 MULTI SMART\n"
-            f"{emoji} {operacion} {symbol} [{tipo_op_txt}]{marca_r}\n"
+            f"{emoji} {operacion} {symbol} [{tipo_op_txt}]\n"
             f"📈 Precio actual: ${precio_actual:.6f}\n"
             f"📉 {tipo_linea}{flip_text} ({inclinacion})\n"
             f"   • TF: {line.get('timeframe', '')}\n"
-            f"   • Nivel: ${nivel_linea:.6f}\n"
+            f"   • Nivel entrada: ${nivel_linea:.6f}\n"
             f"   • Toques: {line.get('touchCount', 0)} ({alert['structure_quality']})\n"
             f"🎯 Score: {alert['score']:.1f}\n"
+            f"{tp_texto}\n"
             f"📈 Momentum: {flecha} {tendencia}\n"
             f"🌐 BTC: {btc_dir_str} {btc_modo_str} | RSI4h {btc_rsi4h_str} RSI1h {btc_rsi1h_str} RSI15m {btc_rsi15m_str}\n"
             f"📊 Estado BTC: {estado_btc} | Δ2h {btc_delta_str}\n"
@@ -1326,6 +1446,12 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
 
         if send_telegram_message(msg):
             sent_count += 1
+
+            tp1_nivel = tp1["nivel"] if tp1 else None
+            tp2_nivel = tp2["nivel"] if tp2 else None
+            tp1_dist = tp1["distancia_pct"] if tp1 else None
+            tp2_dist = tp2["distancia_pct"] if tp2 else None
+
             csv_data = {
                 "hora_lima": now_lima, "symbol": symbol, "bias": operacion,
                 "type": line.get("type", ""), "timeframe": line.get("timeframe", ""),
@@ -1350,15 +1476,26 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
                 "pd_conf": "1" if pd_vol_conf else "0",
                 "smart_direction": smart_dir_str,
                 "smart_line_score": smart_line_score_str,
+                "tp1_nivel": f"{tp1_nivel:.6f}" if tp1_nivel else "",
+                "tp1_dist": f"{tp1_dist:+.2f}" if tp1_dist else "",
+                "tp2_nivel": f"{tp2_nivel:.6f}" if tp2_nivel else "",
+                "tp2_dist": f"{tp2_dist:+.2f}" if tp2_dist else "",
                 "structure_quality": alert['structure_quality'],
                 "total_score": f"{alert['score']:.1f}",
             }
             guardar_en_csv(csv_data)
-            new_state.append({
+
+            state_item = {
                 "symbol": symbol, "type": line.get("type"),
                 "timeframe": line.get("timeframe"),
                 "currentLevel": nivel_linea, "detected_at": now_ts,
-            })
+                "entry_price": precio_actual,
+                "tp1_nivel": tp1_nivel,
+                "tp2_nivel": tp2_nivel,
+                "tp1_hit": False,
+                "tp2_hit": False,
+            }
+            new_state.append(state_item)
 
     return sent_count, long_count, new_state
 
@@ -1385,15 +1522,12 @@ def analizar_moneda(symbol, volume_by_symbol, btc_context, btc_rsi_data, hora_li
 
 def main():
     print("\n" + "=" * 70, flush=True)
-    print("🚀 MULTI SMART — SOLO LONGs", flush=True)
+    print("🚀 MULTI SMART — SOLO LONGs + TP desde CoinBeacon", flush=True)
     print(f"   Lista dinámica desde CoinBeacon (hasta {MAX_MONEDAS_DINAMICAS})", flush=True)
     print(f"   Filtro BTC v3: UP FUERTE+FAVORABLE o INDECISO con delta>=0 (o N/A) y RSI4h>={BTC_REBOTE_RSI4H_MIN}", flush=True)
     print(f"   Smart línea: conf>={SMART_LINE_SCORE_MIN} | dir>={SMART_DIRECTION_SCORE_MIN_LONG} | score>={SMART_TOTAL_SCORE_MIN}", flush=True)
     print(f"   Status: near breakout / broke up / retest holding (S y R) / rising cerca (<=1.0%)", flush=True)
-    if VENTANAS_ALERTA:
-        print(f"   Ventanas R activas: {VENTANAS_ALERTA}", flush=True)
-    else:
-        print(f"   Ventanas R: (vacías — sin marca R)", flush=True)
+    print(f"   TP: 2 resistencias más cercanas de CoinBeacon (aviso al tocar)", flush=True)
     print("=" * 70, flush=True)
 
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
@@ -1410,6 +1544,9 @@ def main():
                 "rsi15": item.get("rsi15"),
             }
             break
+
+    # ═══ REVISAR TPs PENDIENTES (antes de analizar nuevas) ═══
+    previous_state, tp_avisos = revisar_tps_pendientes(previous_state)
 
     print("\n🌐 ANALIZANDO CONTEXTO BTC", flush=True)
     btc_coin_data = analizar_coinbeacon(BTC_SYMBOL)
@@ -1516,7 +1653,8 @@ def main():
     print("\n" + "=" * 70, flush=True)
     print("📢 RESULTADO FINAL", flush=True)
     print("=" * 70, flush=True)
-    print(f"Alertas nuevas: {sent_count}", flush=True)
+    print(f"Alertas LONG nuevas: {sent_count}", flush=True)
+    print(f"Avisos TP: {tp_avisos}", flush=True)
     print(f"🟢 LONG: {long_count}", flush=True)
     print(f"🧭 BTC: {btc_context.get('btc_dir', 'flat').upper()} {btc_context.get('btc_modo', 'neutro').upper()} | Δ2h {btc_context.get('delta_2h')}", flush=True)
     print(f"📡 Monedas analizadas: {len(monedas_a_analizar)}", flush=True)
