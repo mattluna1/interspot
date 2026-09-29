@@ -11,9 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    permissions:
+      contents: write    # Necesario para hacer commit del state
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # Necesario para poder hacer push
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -33,7 +38,27 @@ jobs:
           COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
         run: python multi_smart.py
 
-      - name: Guardar estado y CSV como artefacto
+      - name: Guardar estado en el repo
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Crear carpeta data si no existe
+          mkdir -p data
+
+          # Añadir solo los archivos de estado/CSV (no todo el repo)
+          git add -f data/multi_smart_state.json data/multi_smart.csv data/multi_smart_historial_lineas.csv 2>/dev/null || true
+
+          # Solo commit si hay cambios
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update multi_smart state [skip ci]"
+            git push
+          else
+            echo "Sin cambios en el state"
+          fi
+
+      - name: Guardar estado y CSV como artefacto (respaldo)
         if: always()
         uses: actions/upload-artifact@v4
         with:
