@@ -48,14 +48,15 @@ jobs:
           echo "=== Archivos en data/ ==="
           ls -la data/ || echo "carpeta data vacía o inexistente"
 
-          echo "=== Contenido de multi_smart_state.json ==="
-          cat data/multi_smart_state.json 2>&1 || echo "ARCHIVO NO EXISTE"
-
-          echo "=== git status ==="
-          git status
-
-          echo "=== git add ==="
-          git add -f data/multi_smart_state.json data/multi_smart.csv data/multi_smart_historial_lineas.csv 2>&1 || true
+          # Añadir SOLO los archivos que existan (uno por uno)
+          for f in data/multi_smart_state.json data/multi_smart.csv data/multi_smart_historial_lineas.csv; do
+            if [ -f "$f" ]; then
+              git add -f "$f"
+              echo "✅ Añadido: $f"
+            else
+              echo "⏭️ No existe (se omite): $f"
+            fi
+          done
 
           echo "=== git diff --cached ==="
           git diff --cached --stat
