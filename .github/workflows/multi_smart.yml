@@ -1,0 +1,45 @@
+name: Multi Smart — CoinBeacon + Smart
+
+on:
+  schedule:
+    # Cada 15 minutos
+    - cron: '*/15 * * * *'
+  workflow_dispatch:  # También manual
+
+jobs:
+  multi_smart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Ejecutar Multi Smart
+        env:
+          COINBEACON_TOKEN: ${{ secrets.COINBEACON_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+        run: python multi_smart.py
+
+      - name: Guardar estado y CSV como artefacto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: multi-smart-data
+          path: |
+            data/multi_smart_state.json
+            data/multi_smart.csv
+          retention-days: 7
+          if-no-files-found: ignore
