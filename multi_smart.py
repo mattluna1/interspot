@@ -15,7 +15,8 @@ import requests
 # ============================================================
 # MULTI SMART — SOLO LONGs
 # Lista dinámica desde CoinBeacon | Filtros Smart | PD | BTC contexto
-# Filtro de status: near breakout / broke up / retest holding / rising cerca
+# Filtro BTC: dir=up Y estado=FAVORABLE
+# Filtro confianza línea: 6.5 | Filtro score interno: 75
 # ============================================================
 
 SYMBOLS = [
@@ -49,8 +50,9 @@ RSI15_SUELO_ENTRADA = 35.0
 PD_VENTANA_MIN = 10
 PD_MIN_PCT = 2.0
 
-SMART_LINE_SCORE_MIN = 6.0
+SMART_LINE_SCORE_MIN = 6.5           # [AJUSTE] era 6.0
 SMART_DIRECTION_SCORE_MIN_LONG = -20
+SMART_TOTAL_SCORE_MIN = 75           # [AJUSTE] nuevo
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -524,7 +526,7 @@ def analizar_coinbeacon(symbol):
     if validas:
         print(f"\n⭐ {len(validas)} líneas válidas:", flush=True)
         for linea in validas[:5]:
-            print(f"   {linea['timeframe']} | {linea['type']} | ${linea['currentLevel']:.6f} | dist {linea['distance_pct']:+.2f}% | toques {linea['touchCount']} | conf {linea.get('confidence',0):.1f} | dir {linea.get('direction_score',0)} | bias {linea.get('bias')}", flush=True)
+            print(f"   {linea['timeframe']} | {linea['type']} | ${linea['currentLevel']:.6f} | dist {linea['distance_pct']:+.2f}% | toques {linea['touchCount']} | conf {linea.get('confidence',0):.1f} | dir {linea.get('direction_score',0)} | bias {linea.get('bias')} | score {linea.get('total_score',0):.1f}", flush=True)
 
     return {"price": precio, "lines": todas}
 
@@ -1055,11 +1057,16 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         if abs(distancia) > 1.0:
             continue
 
+        # ═══ 4) Score interno mínimo ═══
+        total_score = linea.get("total_score", 0)
+        if total_score < SMART_TOTAL_SCORE_MIN:
+            print(f"   ⏭️ {symbol} {linea.get('timeframe')} score {total_score:.1f} < {SMART_TOTAL_SCORE_MIN} → sin alerta", flush=True)
+            continue
+
         tf = linea.get("timeframe")
         tendencia = tendencia_1h if tf == "1h" else tendencia_15m
 
         operacion = "LONG"
-        total_score = linea.get("total_score", 0)
 
         # PD: si hay dump activo, bloquear LONG (a menos que sea reversal)
         if pd["activo"]:
@@ -1150,7 +1157,7 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
     if alerts:
         print(f"\n   ⭐ {len(alerts)} LONG(s)", flush=True)
         for a in alerts:
-            print(f"      LONG | {a['line']['timeframe']} | conf {a['smart_confidence']:.1f} | dir {a['smart_direction']:.0f} | bias {a['smart_bias']}", flush=True)
+            print(f"      LONG | {a['line']['timeframe']} | conf {a['smart_confidence']:.1f} | dir {a['smart_direction']:.0f} | bias {a['smart_bias']} | score {a['score']:.1f}", flush=True)
     else:
         print("\n   ⚪ Sin alertas LONG.", flush=True)
 
@@ -1327,7 +1334,8 @@ def main():
     print("\n" + "=" * 70, flush=True)
     print("🚀 MULTI SMART — SOLO LONGs", flush=True)
     print(f"   Lista dinámica desde CoinBeacon (hasta {MAX_MONEDAS_DINAMICAS})", flush=True)
-    print(f"   Smart: conf≥{SMART_LINE_SCORE_MIN} | dir≥{SMART_DIRECTION_SCORE_MIN_LONG} para LONG", flush=True)
+    print(f"   BTC filtro: dir=UP + estado=FAVORABLE", flush=True)
+    print(f"   Smart línea: conf≥{SMART_LINE_SCORE_MIN} | dir≥{SMART_DIRECTION_SCORE_MIN_LONG} | score≥{SMART_TOTAL_SCORE_MIN}", flush=True)
     print(f"   Status: near breakout / broke up / retest holding / rising cerca (≤1.0%)", flush=True)
     print("=" * 70, flush=True)
 
@@ -1355,9 +1363,11 @@ def main():
         prev_btc=prev_btc
     )
 
-    # Si BTC no está UP, salir temprano (bot solo LONGs)
-    if btc_context.get("btc_dir") != "up":
-        print(f"\n⏸️ BTC NO está UP → bot solo LONGs. Saliendo sin analizar monedas.", flush=True)
+    # ═══ FILTRO BTC NIVEL 2: dir=UP Y estado=FAVORABLE ═══
+    btc_dir = btc_context.get("btc_dir")
+    btc_estado = btc_context.get("estado")
+    if btc_dir != "up" or btc_estado != "FAVORABLE":
+        print(f"\n⏸️ BTC no cumple (dir={btc_dir}, estado={btc_estado}) → saliendo sin analizar monedas.", flush=True)
         now_ts = datetime.now(timezone.utc).timestamp()
         new_state = list(previous_state)
         new_state.append({
