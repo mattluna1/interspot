@@ -144,45 +144,22 @@
     "tp2_hit": false
   },
   {
-    "type": "btc_rsi",
-    "rsi4": 51.58,
-    "rsi1": 57.46,
-    "rsi15": 69.76,
-    "detected_at": 1790766248.145146
+    "symbol": "INJ",
+    "type": "support",
+    "timeframe": "1h",
+    "currentLevel": 7.644909090909089,
+    "detected_at": 1790773216.685609,
+    "entry_price": 7.717,
+    "tp1_nivel": 7.826826923076923,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
   },
   {
     "type": "btc_rsi",
-    "rsi4": 49.96,
-    "rsi1": 54.06,
-    "rsi15": 60.29,
-    "detected_at": 1790767425.551349
-  },
-  {
-    "type": "btc_rsi",
-    "rsi4": 49.96,
-    "rsi1": 54.06,
-    "rsi15": 60.29,
-    "detected_at": 1790768230.949603
-  },
-  {
-    "type": "btc_rsi",
-    "rsi4": 51.3,
-    "rsi1": 56.83,
-    "rsi15": 67.01,
-    "detected_at": 1790769178.565421
-  },
-  {
-    "type": "btc_rsi",
-    "rsi4": 51.03,
-    "rsi1": 56.24,
-    "rsi15": 63.66,
-    "detected_at": 1790769881.594153
-  },
-  {
-    "type": "btc_rsi",
-    "rsi4": 51.19,
-    "rsi1": 56.67,
-    "rsi15": 64.84,
-    "detected_at": 1790771659.108773
+    "rsi4": 62.78,
+    "rsi1": 73.17,
+    "rsi15": 87.42,
+    "detected_at": 1790773137.197386
   }
 ]
