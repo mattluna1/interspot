@@ -132,10 +132,22 @@
     "tp2_hit": false
   },
   {
+    "symbol": "EIGEN",
+    "type": "support",
+    "timeframe": "1h",
+    "currentLevel": 0.24902030456852792,
+    "detected_at": 1790766348.994314,
+    "entry_price": 0.2492,
+    "tp1_nivel": null,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
+  },
+  {
     "type": "btc_rsi",
-    "rsi4": 51.18,
-    "rsi1": 56.87,
-    "rsi15": 68.64,
-    "detected_at": 1790765619.889943
+    "rsi4": 51.58,
+    "rsi1": 57.46,
+    "rsi15": 69.76,
+    "detected_at": 1790766248.145146
   }
 ]
