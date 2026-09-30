@@ -1,10 +1,12 @@
 name: CMC Collector
 
 on:
-  workflow_dispatch:
-
   schedule:
     - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   collect:
@@ -21,7 +23,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install requests
 
       - name: Run CMC collector
@@ -30,20 +31,16 @@ jobs:
         run: |
           python cmc_collector.py
 
-      - name: Show collected data
+      - name: Save collected data
         run: |
-          echo "========================================"
-          echo "CMC DATA"
-          echo "========================================"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if [ -f data/cmc/market_history.csv ]; then
-            echo "Archivo encontrado:"
-            ls -lh data/cmc/market_history.csv
+          git add data/cmc/
 
-            echo ""
-            echo "Últimas 10 filas:"
-            tail -n 10 data/cmc/market_history.csv
+          if git diff --cached --quiet; then
+            echo "No hay cambios para guardar."
           else
-            echo "ERROR: No se encontró market_history.csv"
-            exit 1
+            git commit -m "data: collect CMC market snapshot"
+            git push
           fi
