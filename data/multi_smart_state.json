@@ -20,7 +20,7 @@
     "entry_price": 2686.44,
     "tp1_nivel": 2696.9474999999993,
     "tp2_nivel": 2753.3076923076924,
-    "tp1_hit": false,
+    "tp1_hit": true,
     "tp2_hit": false
   },
   {
@@ -163,5 +163,12 @@
     "rsi1": 54.06,
     "rsi15": 60.29,
     "detected_at": 1790768230.949603
+  },
+  {
+    "type": "btc_rsi",
+    "rsi4": 51.3,
+    "rsi1": 56.83,
+    "rsi15": 67.01,
+    "detected_at": 1790769178.565421
   }
 ]
