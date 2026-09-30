@@ -156,10 +156,22 @@
     "tp2_hit": false
   },
   {
+    "symbol": "PROM",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 6.403666666666671,
+    "detected_at": 1790775204.903837,
+    "entry_price": 6.468,
+    "tp1_nivel": 6.5352,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
+  },
+  {
     "type": "btc_rsi",
-    "rsi4": 62.78,
-    "rsi1": 73.17,
-    "rsi15": 87.42,
-    "detected_at": 1790774062.53515
+    "rsi4": 62.03,
+    "rsi1": 72.23,
+    "rsi15": 84.0,
+    "detected_at": 1790775091.280344
   }
 ]
