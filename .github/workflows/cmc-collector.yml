@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: cmc-collector
+  cancel-in-progress: false
+
 jobs:
   collect:
     runs-on: ubuntu-latest
@@ -42,5 +46,6 @@ jobs:
             echo "No hay cambios para guardar."
           else
             git commit -m "data: collect CMC market snapshot"
+            git pull --rebase origin main
             git push
           fi
