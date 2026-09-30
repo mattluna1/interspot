@@ -120,17 +120,22 @@
     "tp2_hit": false
   },
   {
-    "type": "btc_rsi",
-    "rsi4": 50.11,
-    "rsi1": 55.07,
-    "rsi15": 65.71,
-    "detected_at": 1790764024.984874
+    "symbol": "0G",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.3385142857142858,
+    "detected_at": 1790765747.282837,
+    "entry_price": 0.3402,
+    "tp1_nivel": 0.36666693877551015,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
   },
   {
     "type": "btc_rsi",
-    "rsi4": 50.11,
-    "rsi1": 55.07,
-    "rsi15": 65.71,
-    "detected_at": 1790764809.593694
+    "rsi4": 51.18,
+    "rsi1": 56.87,
+    "rsi15": 68.64,
+    "detected_at": 1790765619.889943
   }
 ]
