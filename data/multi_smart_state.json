@@ -132,17 +132,22 @@
     "tp2_hit": false
   },
   {
-    "type": "btc_rsi",
-    "rsi4": 69.92,
-    "rsi1": 77.11,
-    "rsi15": 81.07,
-    "detected_at": 1790915140.811572
+    "symbol": "RVN",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.002374189873417721,
+    "detected_at": 1790916891.967911,
+    "entry_price": 0.002397,
+    "tp1_nivel": null,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
   },
   {
     "type": "btc_rsi",
-    "rsi4": 69.92,
-    "rsi1": 77.11,
-    "rsi15": 81.07,
-    "detected_at": 1790915986.995886
+    "rsi4": 71.55,
+    "rsi1": 79.13,
+    "rsi15": 77.35,
+    "detected_at": 1790916786.361412
   }
 ]
