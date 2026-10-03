@@ -1,16 +1,15 @@
-name: MULTI SMART
+name: RECOLECTOR BTC interspot
 
 permissions:
   contents: write
 
 on:
   schedule:
-    - cron: '*/5 11-23 * * *'
-    - cron: '*/5 0-3 * * *'
+    - cron: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *'
   workflow_dispatch:
 
 concurrency:
-  group: multi-smart
+  group: interspot-push
   cancel-in-progress: false
 
 jobs:
@@ -27,40 +26,28 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install requests
-
       - name: Check syntax
         run: |
-          python -m py_compile multi_smart.py
+          python -m py_compile recolector_btc.py
           echo "✅ Sintaxis OK"
 
-      - name: Run MULTI SMART
-        env:
-          COINBEACON_TOKEN: ${{ secrets.COINBEACON_TOKEN_SMART }}
-          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python multi_smart.py
+      - name: Run RECOLECTOR BTC
+        run: python recolector_btc.py
 
-      - name: Commit data
+      - name: Commit cache
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if [ -f data/multi_smart.csv ]; then git add data/multi_smart.csv; fi
-          if [ -f data/multi_smart_state.json ]; then git add data/multi_smart_state.json; fi
-          if [ -f data/multi_smart_historial_lineas.csv ]; then git add data/multi_smart_historial_lineas.csv; fi
-          if [ -f data/multi_smart_tps.csv ]; then git add data/multi_smart_tps.csv; fi
-          if [ -f data/multi_smart_throttle.json ]; then git add data/multi_smart_throttle.json; fi
+          if [ -d data/cache ]; then
+            git add data/cache/
+          fi
 
           if git diff --staged --quiet; then
             echo "📭 Sin cambios."
           else
-            git commit -m "Multi Smart [skip ci]"
+            git commit -m "Recolector BTC [skip ci] $(date -u +'%Y-%m-%d %H:%M UTC')"
             for i in 1 2 3; do
               git pull --rebase origin main && break
               sleep 5
