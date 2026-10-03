@@ -995,42 +995,19 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         tp2 = alert.get("tp2")
         entry_price = alert.get("entry_price") or precio_actual
 
-        lineas_tp = []
-        if tp1:
-            ganancia_tp1 = ((tp1["nivel"] - entry_price) / entry_price) * 100
-            lineas_tp.append(f"🎯 TP1 ({tp1['timeframe']}): ${tp1['nivel']:.6f} ({ganancia_tp1:+.2f}%)")
-        if tp2:
-            ganancia_tp2 = ((tp2["nivel"] - entry_price) / entry_price) * 100
-            lineas_tp.append(f"🎯 TP2 ({tp2['timeframe']}): ${tp2['nivel']:.6f} ({ganancia_tp2:+.2f}%)")
-        tp_texto = "\n".join(lineas_tp) if lineas_tp else "🎯 TP: sin resistencias cercanas"
-
-        # ═══════════════════════════════════════════════════════════
-        # CAMBIO 1: Título 🧠 MULTI SMART
-        # ═══════════════════════════════════════════════════════════
         msg = (
-            f"🧠 MULTI SMART\n"
-            f"🟢 LONG {symbol} [{tipo_op_txt}]\n"
-            f"📈 Precio actual: ${precio_actual:.6f}\n"
+            f"🧠 LONG {symbol} [{tipo_op_txt}]\n"
+            f"📈 ${precio_actual:.6f}\n"
             f"📉 {tipo_linea}{flip_text} ({inclinacion})\n"
             f"   • TF: {line.get('timeframe', '')}\n"
             f"   • Nivel: ${nivel_linea:.6f}\n"
             f"   • Toques: {line.get('touchCount', 0)} ({alert['structure_quality']})\n"
             f"🎯 Score: {alert['score']:.1f}\n"
-            f"{tp_texto}\n"
-            f"📈 Momentum: {flecha} {tendencia}\n"
-            f"🌐 BTC: {btc_dir_str} {btc_modo_str}\n"
-            f"{smart_linea}\n"
-            f"🧠 RSI moneda: 1h={rsi1h_str} | 15m={rsi15m_str}\n"
-            f"{pd_linea}\n"
-            f"🕐 {now_lima}\n"
+            f"🕐 {now_lima}"
         )
-        if tag_text:
-            msg += f"{tag_text}\n"
-        msg += "━━━━━━━━━━━━━━━━━━━"
 
         if send_telegram_message(msg):
             sent_count += 1
-            # CAMBIO 4: log de monedas enviadas
             print(f"   🟢 LONG {symbol} [{tipo_op_txt}] → enviado", flush=True)
 
             tp1_nivel = tp1["nivel"] if tp1 else None
