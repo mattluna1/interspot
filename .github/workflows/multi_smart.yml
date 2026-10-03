@@ -1,20 +1,22 @@
-name: Multi Smart — CoinBeacon + Smart
+name: MULTI SMART
+
+permissions:
+  contents: write
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
+concurrency:
+  group: multi-smart
+  cancel-in-progress: false
+
 jobs:
-  multi_smart:
+  monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -24,57 +26,47 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Instalar dependencias
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install requests
 
-      - name: Ejecutar Multi Smart
+      - name: Check syntax
+        run: |
+          python -m py_compile multi_smart.py
+          echo "✅ Sintaxis OK"
+
+      - name: Run MULTI SMART
         env:
-          COINBEACON_TOKEN: ${{ secrets.COINBEACON_TOKEN }}
+          COINBEACON_TOKEN: ${{ secrets.COINBEACON_TOKEN_SMART }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
         run: python multi_smart.py
 
-      - name: Guardar estado en el repo
+      - name: Commit data
         if: always()
         run: |
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          mkdir -p data
+          if [ -f data/multi_smart.csv ]; then git add data/multi_smart.csv; fi
+          if [ -f data/multi_smart_state.json ]; then git add data/multi_smart_state.json; fi
+          if [ -f data/multi_smart_historial_lineas.csv ]; then git add data/multi_smart_historial_lineas.csv; fi
+          if [ -f data/multi_smart_tps.csv ]; then git add data/multi_smart_tps.csv; fi
+          if [ -f data/multi_smart_throttle.json ]; then git add data/multi_smart_throttle.json; fi
 
-          echo "=== Archivos en data/ ==="
-          ls -la data/ || echo "carpeta data vacía o inexistente"
-
-          # Añadir SOLO los archivos que existan (uno por uno)
-          for f in data/multi_smart_state.json data/multi_smart.csv data/multi_smart_historial_lineas.csv; do
-            if [ -f "$f" ]; then
-              git add -f "$f"
-              echo "✅ Añadido: $f"
-            else
-              echo "⏭️ No existe (se omite): $f"
-            fi
-          done
-
-          echo "=== git diff --cached ==="
-          git diff --cached --stat
-
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update multi_smart state [skip ci]"
-            git push
+          if git diff --staged --quiet; then
+            echo "📭 Sin cambios."
           else
-            echo "Sin cambios en el state"
+            git commit -m "Multi Smart [skip ci]"
+            for i in 1 2 3; do
+              git pull --rebase origin main && break
+              sleep 5
+            done
+            for i in 1 2 3; do
+              git push && echo "✅ Push OK" && break
+              git pull --rebase origin main || true
+              sleep 10
+            done
           fi
-
-      - name: Guardar estado y CSV como artefacto (respaldo)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: multi-smart-data
-          path: |
-            data/multi_smart_state.json
-            data/multi_smart.csv
-          retention-days: 7
-          if-no-files-found: ignore
