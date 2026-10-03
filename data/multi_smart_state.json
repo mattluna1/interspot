@@ -34,5 +34,29 @@
     "tp2_nivel": null,
     "tp1_hit": false,
     "tp2_hit": false
+  },
+  {
+    "symbol": "LTC",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 69.23387096774195,
+    "detected_at": 1790999891.179152,
+    "entry_price": 69.07,
+    "tp1_nivel": 71.48761904761905,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
+  },
+  {
+    "symbol": "KAVA",
+    "type": "support",
+    "timeframe": "1h",
+    "currentLevel": 0.06842666666666666,
+    "detected_at": 1790999891.179152,
+    "entry_price": 0.06875,
+    "tp1_nivel": 0.0689296338672769,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
   }
 ]
