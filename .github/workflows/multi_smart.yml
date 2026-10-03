@@ -1,20 +1,22 @@
-name: RECOLECTOR BTC interspot
+name: MULTI SMART
 
 permissions:
   contents: write
 
 on:
   schedule:
-    - cron: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 concurrency:
-  group: interspot-push
+  group: multi-smart
   cancel-in-progress: false
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,28 +28,40 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install requests
+
       - name: Check syntax
         run: |
-          python -m py_compile recolector_btc.py
+          python -m py_compile multi_smart.py
           echo "✅ Sintaxis OK"
 
-      - name: Run RECOLECTOR BTC
-        run: python recolector_btc.py
+      - name: Run MULTI SMART
+        env:
+          COINBEACON_TOKEN: ${{ secrets.COINBEACON_TOKEN_SMART }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python multi_smart.py
 
-      - name: Commit cache
+      - name: Commit data
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if [ -d data/cache ]; then
-            git add data/cache/
-          fi
+          if [ -f data/multi_smart.csv ]; then git add data/multi_smart.csv; fi
+          if [ -f data/multi_smart_state.json ]; then git add data/multi_smart_state.json; fi
+          if [ -f data/multi_smart_historial_lineas.csv ]; then git add data/multi_smart_historial_lineas.csv; fi
+          if [ -f data/multi_smart_tps.csv ]; then git add data/multi_smart_tps.csv; fi
+          if [ -f data/multi_smart_throttle.json ]; then git add data/multi_smart_throttle.json; fi
 
           if git diff --staged --quiet; then
             echo "📭 Sin cambios."
           else
-            git commit -m "Recolector BTC [skip ci] $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git commit -m "Multi Smart [skip ci]"
             for i in 1 2 3; do
               git pull --rebase origin main && break
               sleep 5
