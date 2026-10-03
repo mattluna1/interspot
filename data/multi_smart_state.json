@@ -22,5 +22,17 @@
     "tp2_nivel": null,
     "tp1_hit": false,
     "tp2_hit": false
+  },
+  {
+    "symbol": "MUBARAK",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.06059500000000014,
+    "detected_at": 1790996427.577455,
+    "entry_price": 0.0611,
+    "tp1_nivel": 0.06115925,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
   }
 ]
