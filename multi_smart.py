@@ -70,9 +70,6 @@ HORA_FIN = 24
 PD_VENTANA_MIN = 10
 PD_MIN_PCT = 2.0
 
-# ============================================================
-# CACHE REMOTO — apunta a interspot
-# ============================================================
 CACHE_REMOTE_BASE = (
     "https://raw.githubusercontent.com/mattluna1/"
     "interspot/main/data/cache"
@@ -145,10 +142,6 @@ def leer_cache_remoto(symbol):
         "velas_1h": data.get("velas_1h", []),
     }
 
-
-# ============================================================
-# FILTRO COMPRESIÓN
-# ============================================================
 
 def _media(xs):
     return sum(xs) / len(xs) if xs else 0.0
@@ -252,10 +245,6 @@ def guardar_throttle(estado):
     except Exception as e:
         print(f"⚠️ No se pudo guardar throttle: {e}", flush=True)
 
-
-# ============================================================
-# PUMP/DUMP, HELPERS, COINBEACON
-# ============================================================
 
 def consultar_pumping_events():
     token = os.environ.get("COINBEACON_TOKEN")
@@ -712,6 +701,7 @@ def revisar_tps_pendientes(previous_state):
 
         if tp2 is not None and precio_actual >= tp2 and not tp2_hit:
             msg = (
+                f"🧠 MULTI SMART\n"
                 f"🎉 TP2 ALCANZADO — {symbol}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"📈 Precio actual: ${precio_actual:.6f}\n"
@@ -737,6 +727,7 @@ def revisar_tps_pendientes(previous_state):
         if tp1 is not None and precio_actual >= tp1 and not tp1_hit:
             linea_tp2 = f"🎯 Próximo objetivo TP2: ${tp2:.6f}\n" if tp2 else ""
             msg = (
+                f"🧠 MULTI SMART\n"
                 f"✅ TP1 ALCANZADO — {symbol}\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"📈 Precio actual: ${precio_actual:.6f}\n"
@@ -867,14 +858,22 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
 
     final_candidates.sort(key=lambda x: x["score"], reverse=True)
 
-    seen = set()
-    filtered = []
+    # ═══════════════════════════════════════════════════════════
+    # CAMBIO 3: Dedup por símbolo — preferir 1h sobre 15m
+    # ═══════════════════════════════════════════════════════════
+    seen = {}
     for cand in final_candidates:
-        sym = cand["line"].get("symbol")
-        if sym in seen:
-            continue
-        seen.add(sym)
-        filtered.append(cand)
+        sym = cand["line"].get("symbol", "").replace("USDT", "").upper()
+        tf = cand["line"].get("timeframe", "15m")
+        if sym not in seen:
+            seen[sym] = cand
+        else:
+            tf_prev = seen[sym]["line"].get("timeframe", "15m")
+            if tf == "1h" and tf_prev == "15m":
+                seen[sym] = cand
+
+    filtered = list(seen.values())
+    filtered.sort(key=lambda x: x["score"], reverse=True)
 
     resistencias_cercanas = obtener_resistencias_cercanas(lineas, precio, max_items=2)
     tp1 = resistencias_cercanas[0] if len(resistencias_cercanas) > 0 else None
@@ -1005,8 +1004,11 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
             lineas_tp.append(f"🎯 TP2 ({tp2['timeframe']}): ${tp2['nivel']:.6f} ({ganancia_tp2:+.2f}%)")
         tp_texto = "\n".join(lineas_tp) if lineas_tp else "🎯 TP: sin resistencias cercanas"
 
+        # ═══════════════════════════════════════════════════════════
+        # CAMBIO 1: Título 🧠 MULTI SMART
+        # ═══════════════════════════════════════════════════════════
         msg = (
-            f"📊 MULTI SMART\n"
+            f"🧠 MULTI SMART\n"
             f"🟢 LONG {symbol} [{tipo_op_txt}]\n"
             f"📈 Precio actual: ${precio_actual:.6f}\n"
             f"📉 {tipo_linea}{flip_text} ({inclinacion})\n"
@@ -1028,6 +1030,8 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
 
         if send_telegram_message(msg):
             sent_count += 1
+            # CAMBIO 4: log de monedas enviadas
+            print(f"   🟢 LONG {symbol} [{tipo_op_txt}] → enviado", flush=True)
 
             tp1_nivel = tp1["nivel"] if tp1 else None
             tp2_nivel = tp2["nivel"] if tp2 else None
@@ -1113,24 +1117,15 @@ def main():
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
 
-    # ============================================================
-    # REVISAR TPs PENDIENTES
-    # ============================================================
     previous_state = cargar_estado()
     previous_state, tp_avisos = revisar_tps_pendientes(previous_state)
 
-    # ============================================================
-    # FILTRO BTC
-    # ============================================================
     print("\n🔍 FILTRO BTC (compresión → expansión)...", flush=True)
     btc_cache_full = leer_cache_remoto(BTC_SYMBOL)
     patron_btc = analizar_patron_btc(btc_cache_full)
     print(f"   Estado:  {patron_btc['estado'].upper()}", flush=True)
     print(f"   Detalle: {patron_btc['detalle']}", flush=True)
 
-    # ============================================================
-    # THROTTLE (solo para saber si analizar; NO enviamos aviso BTC)
-    # ============================================================
     ahora_ts = datetime.now(timezone.utc).timestamp()
     lectura = cargar_throttle()
 
@@ -1151,16 +1146,12 @@ def main():
 
     estado_actual = patron_btc["estado"]
 
-    # NO enviamos ningún mensaje BTC. Solo guardamos el throttle.
     if debe_avisar:
         guardar_throttle(estado_actual)
         print(f"   📝 Throttle actualizado a: {estado_actual}", flush=True)
     else:
         print(f"   🔇 Throttle activo (estado no cambió)", flush=True)
 
-    # ============================================================
-    # DECIDIR SI ANALIZAR
-    # ============================================================
     if not patron_btc["pasa"]:
         print(f"\n⏸️ Filtro BTC no pasó ({estado_actual.upper()}) → sin análisis", flush=True)
         now_ts = datetime.now(timezone.utc).timestamp()
@@ -1168,11 +1159,12 @@ def main():
         guardar_estado(new_state)
         return
 
-    # Si BTC está DOWN → aviso informativo y salir
     if estado_actual == "expandiendo" and patron_btc.get("direccion") == "down":
         print(f"\n⚠️ BTC DOWN → enviando aviso informativo", flush=True)
         ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
+        # CAMBIO 2: título 🧠 MULTI SMART en BTC DOWN
         send_telegram_message(
+            f"🧠 MULTI SMART\n"
             f"📉 BTC DOWN DETECTADO\n"
             f"━━━━━━━━━━━━━━━━━━━\n"
             f"   {patron_btc['detalle']}\n"
@@ -1186,27 +1178,18 @@ def main():
 
     print(f"\n✅ Filtro pasa → analizando monedas", flush=True)
 
-    # ============================================================
-    # CONTEXTO BTC (para uso interno, no se envía aviso)
-    # ============================================================
     btc_context = {
-        "btc_dir": "up",  # forzado porque ya validamos expansión UP
+        "btc_dir": "up",
         "btc_modo": "fuerte",
         "estado": "FAVORABLE",
         "price": btc_cache_full.get("price") if btc_cache_full else None,
     }
 
-    # ============================================================
-    # PUMP EVENTS
-    # ============================================================
     print("\n📡 PUMP EVENTS", flush=True)
     pd_eventos = consultar_pumping_events()
     print(f"   Eventos: {len(pd_eventos)}", flush=True)
     pd_index = indexar_pumping_events(pd_eventos)
 
-    # ============================================================
-    # VOLUMEN
-    # ============================================================
     try:
         volume_data = consultar_volume_coinbeacon()
         print(f"📊 Volumen: {len(volume_data)}", flush=True)
@@ -1215,9 +1198,6 @@ def main():
         volume_data = []
     volume_by_symbol = {str(i.get("symbol", "")).upper(): i for i in volume_data}
 
-    # ============================================================
-    # MONEDAS DINÁMICAS
-    # ============================================================
     monedas_a_analizar = obtener_monedas_recomendadas(timeframe="15m", limit=MAX_MONEDAS_DINAMICAS)
     print(f"   → Analizando {len(monedas_a_analizar)} monedas", flush=True)
 
