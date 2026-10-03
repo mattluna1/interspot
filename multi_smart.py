@@ -996,7 +996,8 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         entry_price = alert.get("entry_price") or precio_actual
 
         msg = (
-            f"🧠 LONG {symbol} [{tipo_op_txt}]\n"
+            f"🧠 MULTI SMART\n"
+            f"🟢 LONG {symbol} [{tipo_op_txt}]\n"
             f"📈 ${precio_actual:.6f}\n"
             f"📉 {tipo_linea}{flip_text} ({inclinacion})\n"
             f"   • TF: {line.get('timeframe', '')}\n"
