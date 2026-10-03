@@ -10,5 +10,17 @@
     "tp2_nivel": null,
     "tp1_hit": false,
     "tp2_hit": false
+  },
+  {
+    "symbol": "BTC",
+    "type": "support",
+    "timeframe": "1h",
+    "currentLevel": 83962.97033707864,
+    "detected_at": 1790992789.762175,
+    "entry_price": 84613.99,
+    "tp1_nivel": null,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
   }
 ]
