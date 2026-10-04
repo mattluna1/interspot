@@ -226,5 +226,13 @@
     "currentLevel": 0.0017281176470588236,
     "detected_at": 1791155777.95684,
     "entry_price": 0.001728
+  },
+  {
+    "symbol": "DASH",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 59.08271604938272,
+    "detected_at": 1791156107.761622,
+    "entry_price": 59.65
   }
 ]
