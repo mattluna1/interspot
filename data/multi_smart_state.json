@@ -1,17 +1,5 @@
 [
   {
-    "symbol": "RVN",
-    "type": "support",
-    "timeframe": "15m",
-    "currentLevel": 0.002374189873417721,
-    "detected_at": 1790916891.967911,
-    "entry_price": 0.002397,
-    "tp1_nivel": null,
-    "tp2_nivel": null,
-    "tp1_hit": false,
-    "tp2_hit": false
-  },
-  {
     "symbol": "BTC",
     "type": "support",
     "timeframe": "1h",
@@ -118,5 +106,21 @@
     "tp2_nivel": null,
     "tp1_hit": false,
     "tp2_hit": false
+  },
+  {
+    "symbol": "ONDO",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.49721594202898556,
+    "detected_at": 1791093670.750358,
+    "entry_price": 0.4961
+  },
+  {
+    "symbol": "AAVE",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 181.38000000000002,
+    "detected_at": 1791093670.750358,
+    "entry_price": 181.86
   }
 ]
