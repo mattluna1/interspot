@@ -202,5 +202,13 @@
     "currentLevel": 0.0959870786516854,
     "detected_at": 1791148571.000244,
     "entry_price": 0.09588
+  },
+  {
+    "symbol": "MOVE",
+    "type": "support",
+    "timeframe": "1h",
+    "currentLevel": 0.010208654867256637,
+    "detected_at": 1791152497.461467,
+    "entry_price": 0.0102
   }
 ]
