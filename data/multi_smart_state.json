@@ -162,5 +162,21 @@
     "currentLevel": 6.988472222222222,
     "detected_at": 1791108107.849695,
     "entry_price": 6.982
+  },
+  {
+    "symbol": "ENA",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.23793609022556392,
+    "detected_at": 1791108370.199362,
+    "entry_price": 0.2379
+  },
+  {
+    "symbol": "RESOLV",
+    "type": "support",
+    "timeframe": "1h",
+    "currentLevel": 0.019110000000000002,
+    "detected_at": 1791108370.199362,
+    "entry_price": 0.01919
   }
 ]
