@@ -94,5 +94,17 @@
     "tp2_nivel": null,
     "tp1_hit": false,
     "tp2_hit": false
+  },
+  {
+    "symbol": "POL",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.11016606741573033,
+    "detected_at": 1791079020.697039,
+    "entry_price": 0.10988,
+    "tp1_nivel": 0.11067228915662651,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
   }
 ]
