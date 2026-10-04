@@ -13,9 +13,9 @@ from pathlib import Path
 import requests
 
 # ============================================================
-# MULTI SMART — Fase 2.1
-#   Filtro compresión BTC (ATR% + NR7) + 60 monedas + LONG-only
-#   SIN sistema de TPs (eliminado)
+# MULTI SMART — Fase 2.2
+#   Filtro compresión BTC (ATR% + NR7) + Squeeze Momentum + ADX
+#   60 monedas dinámicas + LONG-only + SIN TPs
 # ============================================================
 
 SYMBOLS = [
@@ -40,25 +40,42 @@ SMART_DIRECTION_SCORE_MIN_LONG = -20
 SMART_TOTAL_SCORE_MIN = 80
 
 # ============================================================
-# FILTRO BTC — ATR percentil + NR7 (reemplaza ratio fijo)
+# FILTRO BTC — ATR percentil + NR7 + EXPANSIÓN
 # ============================================================
 ATR_PERIOD            = 14
 ATR_VENTANA           = 100
 ATR_UMBRAL_COMPRESION = 20.0
 NR7_PERIOD            = 7
 
-COMP_FACTOR_EXPANSION = 3.0     # vela 3x más grande que promedio
-COMP_HORAS_RECIENTE   = 2       # expansión debe ser reciente
+COMP_FACTOR_EXPANSION = 3.0
+COMP_HORAS_RECIENTE   = 2
 COMP_MIN_VELAS        = 12
 COMP_MODO_FILTRO      = "hard"
 
 COMP_THROTTLE_MIN     = 30
 
 # ============================================================
+# SQUEEZE MOMENTUM (LazyBear)
+# ============================================================
+SQZ_BB_LENGTH = 20
+SQZ_BB_MULT   = 2.0
+SQZ_KC_LENGTH = 20
+SQZ_KC_MULT   = 1.5
+
+# ============================================================
+# ADX
+# ============================================================
+ADX_LENGTH = 14
+ADX_UMBRAL = 23.0
+
+# ============================================================
 # CONTADOR DE DIAGNÓSTICO
 # ============================================================
 CONTADOR_FILTROS = {
     "EDAD": 0,
+    "MOMENTUM": 0,
+    "ADX": 0,
+    "DI": 0,
     "SIN_EXPANSION": 0,
     "COMPRESION": 0,
     "PASA": 0,
@@ -146,7 +163,7 @@ def leer_cache_remoto(symbol):
         "price": ultimo.get("price"),
         "rsi15": ultimo.get("rsi15"),
         "rsi1h": ultimo.get("rsi1h"),
-        "atr_pct15": ultimo.get("atr_pct15"),     # NUEVO
+        "atr_pct15": ultimo.get("atr_pct15"),
         "dir15": ultimo.get("dir15"),
         "dir1h": ultimo.get("dir1h"),
         "edad_min": edad_min,
@@ -190,6 +207,20 @@ def construir_velas(cache, tf="5m"):
 
 
 # ============================================================
+# TRADUCCIÓN DE COLORES
+# ============================================================
+
+def traducir_color_momentum(color_interno):
+    mapa = {
+        "lime":   ("SUBE FUERTE",   "🟢", "Alcista confirmado"),
+        "green":  ("PIERDE FUERZA", "🟡", "Alcista agotándose"),
+        "red":    ("CAE FUERTE",    "🔴", "Bajista confirmado"),
+        "maroon": ("GIRA AL ALZA",  "🟠", "Reversión alcista temprana"),
+    }
+    return mapa.get(color_interno, ("DESCONOCIDO", "⚪", "Sin señal"))
+
+
+# ============================================================
 # ATR PERCENTIL + NR7
 # ============================================================
 
@@ -225,7 +256,6 @@ def calcular_atr_percentile(velas, period=14, ventana=100):
 
 
 def es_nr7(velas, period=7):
-    """NR7: la vela actual tiene el rango más estrecho de las últimas 7."""
     if len(velas) < period:
         return False
     rangos = [v["rango"] for v in velas[-period:]]
@@ -233,7 +263,169 @@ def es_nr7(velas, period=7):
 
 
 # ============================================================
-# ANÁLISIS DE PATRÓN BTC (ATR% + expansión)
+# SQUEEZE MOMENTUM (LazyBear) — portado de multi_tf_coinbeaconB
+# ============================================================
+
+def _sma(serie, length):
+    if len(serie) < length:
+        return None
+    return sum(serie[-length:]) / length
+
+
+def _stdev(serie, length):
+    if len(serie) < length:
+        return None
+    ventana = serie[-length:]
+    m = sum(ventana) / length
+    return (sum((x - m) ** 2 for x in ventana) / length) ** 0.5
+
+
+def _linreg_value(y):
+    n = len(y)
+    if n < 2:
+        return y[-1] if y else 0.0
+    x_mean = (n - 1) / 2.0
+    y_mean = sum(y) / n
+    num = sum((i - x_mean) * (y[i] - y_mean) for i in range(n))
+    den = sum((i - x_mean) ** 2 for i in range(n))
+    if den == 0:
+        return y[-1]
+    slope = num / den
+    return y_mean + slope * ((n - 1) - x_mean)
+
+
+def calcular_squeeze_momentum(velas, length=20, mult=2.0,
+                              lengthKC=20, multKC=1.5):
+    if len(velas) < 2 * lengthKC:
+        return None
+
+    highs  = [v["high"]  for v in velas]
+    lows   = [v["low"]   for v in velas]
+    closes = [v["close"] for v in velas]
+    n = lengthKC
+
+    basis = _sma(closes, length)
+    dev   = _stdev(closes, length)
+    if basis is None or dev is None:
+        return None
+    dev *= mult
+    upperBB, lowerBB = basis + dev, basis - dev
+
+    ma = _sma(closes, n)
+    if ma is None:
+        return None
+    trs = []
+    for i in range(len(closes)):
+        if i == 0:
+            trs.append(highs[i] - lows[i])
+        else:
+            pc = closes[i - 1]
+            trs.append(max(highs[i] - lows[i],
+                           abs(highs[i] - pc),
+                           abs(lows[i] - pc)))
+    rangema = _sma(trs, n)
+    if rangema is None:
+        return None
+    upperKC = ma + rangema * multKC
+    lowerKC = ma - rangema * multKC
+
+    squeeze_on  = (lowerBB > lowerKC) and (upperBB < upperKC)
+    squeeze_off = (lowerBB < lowerKC) and (upperBB > upperKC)
+
+    serie_mom = []
+    for i in range(n - 1, len(closes)):
+        hh = max(highs[i - n + 1:i + 1])
+        ll = min(lows[i - n + 1:i + 1])
+        sma_c = sum(closes[i - n + 1:i + 1]) / n
+        ref = 0.25 * (hh + ll) + 0.5 * sma_c
+        serie_mom.append(closes[i] - ref)
+
+    if len(serie_mom) < n + 1:
+        return None
+
+    m_actual = _linreg_value(serie_mom[-n:])
+    m_prev   = _linreg_value(serie_mom[-n - 1:-1])
+
+    if m_actual > 0:
+        color = "lime" if m_actual > m_prev else "green"
+    else:
+        color = "red"  if m_actual < m_prev else "maroon"
+
+    return {
+        "squeeze_on":    squeeze_on,
+        "squeeze_off":   squeeze_off,
+        "momentum":      m_actual,
+        "momentum_prev": m_prev,
+        "color":         color,
+    }
+
+
+# ============================================================
+# ADX — portado de multi_tf_coinbeaconB
+# ============================================================
+
+def calcular_adx(velas, length=14):
+    n = len(velas)
+    if n < length * 2:
+        return None
+
+    highs = [v["high"] for v in velas]
+    lows = [v["low"] for v in velas]
+    closes = [v["close"] for v in velas]
+
+    tr_list, plus_dm_list, minus_dm_list = [], [], []
+    for i in range(1, n):
+        tr = max(highs[i] - lows[i],
+                 abs(highs[i] - closes[i-1]),
+                 abs(lows[i] - closes[i-1]))
+        tr_list.append(tr)
+
+        up_move = highs[i] - highs[i-1]
+        down_move = lows[i-1] - lows[i]
+
+        plus_dm = up_move if (up_move > down_move and up_move > 0) else 0.0
+        minus_dm = down_move if (down_move > up_move and down_move > 0) else 0.0
+
+        plus_dm_list.append(plus_dm)
+        minus_dm_list.append(minus_dm)
+
+    def smooth(data, period):
+        smoothed = [sum(data[:period])]
+        for i in range(period, len(data)):
+            smoothed.append(smoothed[-1] - (smoothed[-1] / period) + data[i])
+        return smoothed
+
+    atr_smooth = smooth(tr_list, length)
+    plus_dm_smooth = smooth(plus_dm_list, length)
+    minus_dm_smooth = smooth(minus_dm_list, length)
+
+    di_plus_list, di_minus_list, dx_list = [], [], []
+    for i in range(len(atr_smooth)):
+        if atr_smooth[i] == 0:
+            continue
+        di_plus = (plus_dm_smooth[i] / atr_smooth[i]) * 100
+        di_minus = (minus_dm_smooth[i] / atr_smooth[i]) * 100
+        di_plus_list.append(di_plus)
+        di_minus_list.append(di_minus)
+
+        di_sum = di_plus + di_minus
+        if di_sum != 0:
+            dx_list.append(abs(di_plus - di_minus) / di_sum * 100)
+
+    if len(dx_list) < length:
+        return None
+
+    adx = sum(dx_list[-length:]) / length
+
+    return {
+        "adx": adx,
+        "di_plus": di_plus_list[-1] if di_plus_list else None,
+        "di_minus": di_minus_list[-1] if di_minus_list else None,
+    }
+
+
+# ============================================================
+# ANÁLISIS DE PATRÓN BTC (ATR% + expansión + Squeeze + ADX)
 # ============================================================
 
 def analizar_patron_btc(btc_cache):
@@ -252,9 +444,32 @@ def analizar_patron_btc(btc_cache):
 
     ahora = datetime.now(timezone.utc).timestamp()
 
-    # --- Nuevas métricas ---
+    # --- ATR% + NR7 ---
     atr_pct = calcular_atr_percentile(velas, ATR_PERIOD, ATR_VENTANA)
     nr7 = es_nr7(velas, NR7_PERIOD)
+
+    # --- Squeeze Momentum ---
+    sqz = calcular_squeeze_momentum(velas, SQZ_BB_LENGTH, SQZ_BB_MULT,
+                                    SQZ_KC_LENGTH, SQZ_KC_MULT)
+    if sqz is None:
+        CONTADOR_FILTROS["SIN_EXPANSION"] += 1
+        return {"pasa": False, "estado": "neutral",
+                "detalle": "faltan velas para momentum"}
+
+    mom_color = sqz["color"]
+    mom_val   = sqz["momentum"]
+    mom_nombre, mom_emoji, _ = traducir_color_momentum(mom_color)
+
+    # --- ADX ---
+    adx_data = calcular_adx(velas, ADX_LENGTH)
+    if adx_data is None:
+        CONTADOR_FILTROS["SIN_EXPANSION"] += 1
+        return {"pasa": False, "estado": "neutral",
+                "detalle": "faltan velas para ADX"}
+
+    adx_val = adx_data["adx"]
+    di_plus = adx_data["di_plus"]
+    di_minus = adx_data["di_minus"]
 
     # ═══════════════════════════════════════════════════════════
     # BÚSQUEDA DE EXPANSIÓN
@@ -274,18 +489,60 @@ def analizar_patron_btc(btc_cache):
         fuerza_x = vela_actual / prom_previo
         edad_h = (ahora - velas[k]["timestamp"]) / 3600
 
+        # Filtro EDAD
         if edad_h > COMP_HORAS_RECIENTE:
             CONTADOR_FILTROS["EDAD"] += 1
             print(f"   ⏭️ Expansión rechazada por EDAD ({edad_h:.1f}h)", flush=True)
             continue
 
         d = "up" if velas[k]["close"] > velas[k]["open"] else "down"
+        etiqueta = ""
 
+        # Filtro MOMENTUM
+        if d == "up":
+            if mom_color == "maroon":
+                etiqueta = "TEMPRANO"
+            elif mom_color == "lime":
+                etiqueta = "CONFIRMADO"
+            else:
+                CONTADOR_FILTROS["MOMENTUM"] += 1
+                print(f"   ⏭️ Expansión UP rechazada por MOMENTUM "
+                      f"({mom_nombre}, {mom_val:+.4f})", flush=True)
+                continue
+        else:
+            if mom_color == "green":
+                etiqueta = "TEMPRANO"
+            elif mom_color == "red":
+                etiqueta = "CONFIRMADO"
+            else:
+                CONTADOR_FILTROS["MOMENTUM"] += 1
+                print(f"   ⏭️ Expansión DOWN rechazada por MOMENTUM "
+                      f"({mom_nombre}, {mom_val:+.4f})", flush=True)
+                continue
+
+        # Filtro ADX
+        if adx_val < ADX_UMBRAL:
+            CONTADOR_FILTROS["ADX"] += 1
+            print(f"   ⏭️ Expansión {d.upper()} rechazada por ADX "
+                  f"({adx_val:.1f} < {ADX_UMBRAL})", flush=True)
+            continue
+
+        # Filtro DI
+        if d == "up" and (di_plus is None or di_minus is None or di_plus <= di_minus):
+            CONTADOR_FILTROS["DI"] += 1
+            print(f"   ⏭️ Expansión UP rechazada por DI", flush=True)
+            continue
+        if d == "down" and (di_plus is None or di_minus is None or di_minus <= di_plus):
+            CONTADOR_FILTROS["DI"] += 1
+            print(f"   ⏭️ Expansión DOWN rechazada por DI", flush=True)
+            continue
+
+        # PASA
+        CONTADOR_FILTROS["PASA"] += 1
         print(f"   ✅ EXPANSIÓN {d.upper()} CONFIRMADA — "
-              f"fuerza {fuerza_x:.1f}x hace {edad_h:.1f}h | "
+              f"{mom_nombre} [{etiqueta}] | ADX {adx_val:.1f} | "
               f"ATR% {atr_pct if atr_pct is not None else 'N/A'}", flush=True)
 
-        CONTADOR_FILTROS["PASA"] += 1
         return {
             "pasa": True,
             "estado": "expandiendo",
@@ -293,18 +550,29 @@ def analizar_patron_btc(btc_cache):
             "precio": velas[k]["close"],
             "fuerza": fuerza_x,
             "edad_h": edad_h,
+            "momentum":        mom_val,
+            "momentum_prev":   sqz["momentum_prev"],
+            "momentum_color":  mom_color,
+            "momentum_nombre": mom_nombre,
+            "momentum_emoji":  mom_emoji,
+            "momentum_etiqueta": etiqueta,
+            "squeeze_on":      sqz["squeeze_on"],
+            "adx": adx_val,
+            "di_plus": di_plus,
+            "di_minus": di_minus,
             "atr_pct": atr_pct,
             "nr7": nr7,
-            "detalle": f"expansión {d.upper()} hace {edad_h:.1f}h "
-                       f"({fuerza_x:.1f}x) | ATR% {atr_pct if atr_pct is not None else 'N/A'}",
+            "detalle": (f"expansión {d.upper()} hace {edad_h:.1f}h "
+                        f"({fuerza_x:.1f}x) | "
+                        f"mom {mom_nombre} [{etiqueta}] {mom_val:+.4f} | "
+                        f"ADX {adx_val:.1f} | "
+                        f"ATR% {atr_pct if atr_pct is not None else 'N/A'}")
         }
 
     if not hay_expansion:
         CONTADOR_FILTROS["SIN_EXPANSION"] += 1
 
-    # ═══════════════════════════════════════════════════════════
-    # SIN EXPANSIÓN — EVALUAR COMPRESIÓN
-    # ═══════════════════════════════════════════════════════════
+    # Compresión
     if atr_pct is not None and atr_pct < ATR_UMBRAL_COMPRESION:
         CONTADOR_FILTROS["COMPRESION"] += 1
         nr7_txt = " | NR7 ✅" if nr7 else ""
@@ -668,6 +936,7 @@ def guardar_en_csv(alert_data):
         "score", "status", "fallingOrRising", "price",
         "tipo_efectivo", "rsi1h", "rsi15m", "tendencia",
         "btc_dir", "btc_modo", "btc_estado", "atr_pct_btc",
+        "btc_momentum", "btc_adx",
         "pd_tipo", "pd_pct", "pd_rvol", "pd_conf",
         "smart_direction", "smart_line_score",
         "structure_quality", "total_score"
@@ -948,6 +1217,32 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         btc_dir_str = alert.get("btc_dir", "flat").upper()
         btc_modo_str = alert.get("btc_modo", "neutro").upper()
 
+        # --- Momentum + ADX BTC ---
+        pat = btc_context.get("patron_btc") or {}
+        mom_color_interno = (pat.get("momentum_color") or "").lower()
+        mom_nombre, mom_emoji, mom_signif = traducir_color_momentum(mom_color_interno)
+        mom_val = pat.get("momentum")
+        mom_etq = pat.get("momentum_etiqueta", "")
+
+        if mom_etq == "TEMPRANO":
+            badge = "🟠 TEMPRANO"
+        elif mom_etq == "CONFIRMADO":
+            badge = "🟢 CONFIRMADO"
+        else:
+            badge = ""
+
+        mom_val_txt = f"{mom_val:+.4f}" if mom_val is not None else "N/A"
+        mom_linea = f"📈 BTC Mom: {mom_emoji} {mom_nombre} {mom_val_txt} {badge}\n"
+
+        adx_val = pat.get("adx")
+        adx_emoji = "✅" if adx_val and adx_val >= ADX_UMBRAL else "⚠️"
+        adx_str = f"{adx_val:.1f}" if adx_val is not None else "N/A"
+        mom_linea += f"📊 BTC ADX: {adx_emoji} {adx_str}\n"
+
+        btc_atr = pat.get("atr_pct")
+        btc_atr_str = f"{btc_atr:.1f}" if isinstance(btc_atr, (int, float)) else "N/A"
+        mom_linea += f"📉 BTC ATR%: {btc_atr_str}\n"
+
         pd_tipo = alert.get("pd_tipo")
         pd_pct = alert.get("pd_pct", 0.0)
         pd_rvol = alert.get("pd_rvol", 0.0)
@@ -970,9 +1265,6 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         smart_line_score_str = f"{smart_line_score:.1f}" if smart_line_score is not None else "N/A"
         smart_linea = f"🧠 Smart: {smart_conf_str} | Dir {smart_dir_str} | Bias {str(smart_bias).upper()} | Score {smart_line_score_str}"
 
-        btc_atr = btc_context.get("atr_pct", "N/A")
-        btc_atr_str = f"{btc_atr:.1f}" if isinstance(btc_atr, (int, float)) else str(btc_atr)
-
         msg = (
             f"🧠 MULTI SMART\n"
             f"🟢 LONG {symbol} [{tipo_op_txt}]\n"
@@ -982,7 +1274,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
             f"   • Nivel: ${nivel_linea:.6f}\n"
             f"   • Toques: {line.get('touchCount', 0)} ({alert['structure_quality']})\n"
             f"🎯 Score: {alert['score']:.1f}\n"
-            f"📊 BTC: {btc_dir_str} {btc_modo_str} | ATR% {btc_atr_str}\n"
+            f"{mom_linea}"
             f"📈 RSI 1h={rsi1h_str} | 15m={rsi15m_str}\n"
             f"{pd_linea}\n"
             f"{smart_linea}\n"
@@ -1010,6 +1302,8 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
                 "btc_dir": btc_dir_str, "btc_modo": btc_modo_str,
                 "btc_estado": "FAVORABLE",
                 "atr_pct_btc": btc_atr_str,
+                "btc_momentum": mom_nombre,
+                "btc_adx": adx_str,
                 "pd_tipo": pd_tipo or "",
                 "pd_pct": f"{pd_pct:+.2f}" if pd_tipo else "",
                 "pd_rvol": f"{pd_rvol:.2f}" if pd_tipo else "",
@@ -1094,13 +1388,13 @@ def main():
     CONTADOR_FILTROS = {k: 0 for k in CONTADOR_FILTROS}
 
     print("\n" + "=" * 70, flush=True)
-    print("🚀 MULTI SMART — Fase 2.1 (ATR% + NR7, sin TPs)", flush=True)
+    print("🚀 MULTI SMART — Fase 2.2 (ATR% + NR7 + Squeeze + ADX)", flush=True)
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
 
     previous_state = cargar_estado()
 
-    print("\n🔍 FILTRO BTC (compresión → expansión)...", flush=True)
+    print("\n🔍 FILTRO BTC (compresión → expansión + momentum + ADX)...", flush=True)
     btc_cache_full = leer_cache_remoto(BTC_SYMBOL)
     patron_btc = analizar_patron_btc(btc_cache_full)
     print(f"   Estado:  {patron_btc['estado'].upper()}", flush=True)
@@ -1150,8 +1444,24 @@ def main():
             precio_actual = patron_btc.get("precio", 0)
             fuerza = patron_btc.get("fuerza", 0)
             edad_h = patron_btc.get("edad_h", 0)
+
+            mom_color_interno = (patron_btc.get("momentum_color") or "").lower()
+            mom_nombre, mom_emoji, mom_signif = traducir_color_momentum(mom_color_interno)
+            mom_val = patron_btc.get("momentum")
+            mom_etq = patron_btc.get("momentum_etiqueta", "")
+
+            if mom_etq == "TEMPRANO":
+                badge = "🟠 TEMPRANO"
+            elif mom_etq == "CONFIRMADO":
+                badge = "🟢 CONFIRMADO"
+            else:
+                badge = ""
+
+            mom_val_txt = f"{mom_val:+.4f}" if mom_val is not None else "N/A"
+            adx_val = patron_btc.get("adx")
+            adx_str = f"{adx_val:.1f}" if adx_val is not None else "N/A"
             atr_pct_txt = patron_btc.get("atr_pct")
-            atr_line = f"📊 ATR%: {atr_pct_txt:.1f}\n" if atr_pct_txt is not None else ""
+            atr_str = f"{atr_pct_txt:.1f}" if atr_pct_txt is not None else "N/A"
 
             send_telegram_message(
                 f"🧠 MULTI SMART\n"
@@ -1159,7 +1469,8 @@ def main():
                 f"━━━━━━━━━━━━━━━━━━━\n"
                 f"📍 Precio: ${precio_actual:,.2f}\n"
                 f"📊 Fuerza: {fuerza:.1f}x hace {edad_h:.1f}h\n"
-                f"{atr_line}"
+                f"📈 Momentum: {mom_emoji} {mom_nombre} {mom_val_txt} — {badge}\n"
+                f"📊 ADX: {adx_str} | ATR%: {atr_str}\n"
                 f"✅ Filtro pasa → analizando monedas...\n"
                 f"🕐 {ahora_lima_str} (Lima)"
             )
@@ -1198,7 +1509,7 @@ def main():
         "btc_modo": "fuerte",
         "estado": "FAVORABLE",
         "price": btc_cache_full.get("price") if btc_cache_full else None,
-        "atr_pct": patron_btc.get("atr_pct"),
+        "patron_btc": patron_btc,
     }
 
     print("\n📡 PUMP EVENTS", flush=True)
