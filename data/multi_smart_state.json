@@ -58,5 +58,17 @@
     "tp2_nivel": null,
     "tp1_hit": false,
     "tp2_hit": false
+  },
+  {
+    "symbol": "MASK",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.4840933333333333,
+    "detected_at": 1791075116.064262,
+    "entry_price": 0.484,
+    "tp1_nivel": null,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
   }
 ]
