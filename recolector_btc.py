@@ -8,10 +8,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # ============================================================
-# RECOLECTOR — interspot (Fase 2.0)
-#   17 monedas (BTC + 16 alt)
+# RECOLECTOR — interspot (Fase 2.1)
+#   21 monedas (BTC + 20 alt)
 #   Fetches: 5m, 15m, 1h
-#   Acumula: BTC (histórico), otras 16 (solo últimas 100)
+#   Acumula: BTC (histórico), otras (solo últimas 200)
+#   NUEVO: ATR percentil 15m
 # ============================================================
 
 SYMBOLS = [
@@ -22,7 +23,7 @@ SYMBOLS = [
 ]
 
 RETENCION_PULSO_H = 168
-OKX_LIMIT_VELAS = 100
+OKX_LIMIT_VELAS = 200      # era 100, ahora 200 (para ATR percentil)
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -111,6 +112,52 @@ def calcular_rsi(prices, period=14):
     return 100 - (100 / (1 + rs))
 
 
+# ============================================================
+# ATR PERCENTIL — Detección de compresión adaptativa
+# ============================================================
+
+def calcular_atr_percentile(velas, period=14, ventana=100):
+    """
+    Percentil del ATR actual respecto a los últimos `ventana` ATRs.
+    Convierte el ATR a un valor 0-100:
+      0   = ATR más bajo del histórico reciente (compresión máxima)
+      100 = ATR más alto del histórico reciente (expansión máxima)
+    Devuelve None si no hay suficientes velas.
+    """
+    if len(velas) < period + ventana + 1:
+        return None
+
+    # --- Paso 1: True Ranges ---
+    trs = []
+    for i in range(1, len(velas)):
+        high = velas[i]["h"]
+        low  = velas[i]["l"]
+        pc   = velas[i-1]["c"]
+        tr = max(high - low, abs(high - pc), abs(low - pc))
+        trs.append(tr)
+
+    if len(trs) < period + ventana:
+        return None
+
+    # --- Paso 2: ATRs con suma móvil O(n) ---
+    atrs = []
+    suma = sum(trs[:period])
+    atrs.append(suma / period)
+    for i in range(period, len(trs)):
+        suma = suma - trs[i - period] + trs[i]
+        atrs.append(suma / period)
+
+    if len(atrs) < ventana:
+        return None
+
+    # --- Paso 3: Percentil ---
+    actual = atrs[-1]
+    historico = atrs[-ventana:]
+    menores = sum(1 for x in historico if x <= actual)
+
+    return round((menores / len(historico)) * 100, 2)
+
+
 def cache_path(symbol):
     return CACHE_DIR / f"{symbol}.json"
 
@@ -147,6 +194,9 @@ def actualizar_pulso(symbol, ahora):
     rsi15 = calcular_rsi([v["c"] for v in velas_15m])
     rsi1h = calcular_rsi([v["c"] for v in velas_1h]) if velas_1h else None
 
+    # NUEVO: ATR percentil en 15m
+    atr_pct15 = calcular_atr_percentile(velas_15m, period=14, ventana=100)
+
     price = velas_15m[-1]["c"]
 
     def direccion(velas):
@@ -179,6 +229,7 @@ def actualizar_pulso(symbol, ahora):
         "vol15":      round(vol_contratos, 4) if vol_contratos is not None else None,
         "vol_usdt15": round(vol_usdt, 2) if vol_usdt is not None else None,
         "rvol15":     round(rvol, 2),
+        "atr_pct15":  atr_pct15,
         "rsi15":      round(rsi15, 2) if rsi15 is not None else None,
         "rsi1h":      round(rsi1h, 2) if rsi1h is not None else None,
         "dir15":      direccion(velas_15m),
@@ -199,7 +250,7 @@ def actualizar_pulso(symbol, ahora):
     cache["updated_at"] = ahora.isoformat()
     cache["pulso"] = pulso
 
-    # BTC acumula velas, resto solo últimas 100
+    # BTC acumula velas, resto solo últimas 200
     if symbol == "BTC":
         cache["velas_5m"]  = acumular_velas(cache.get("velas_5m",  []), velas_5m,  168)
         cache["velas_15m"] = acumular_velas(cache.get("velas_15m", []), velas_15m, 336)
@@ -213,11 +264,22 @@ def actualizar_pulso(symbol, ahora):
 
     rsi15_str = f"{rsi15:.1f}" if rsi15 is not None else "N/A"
     rsi1h_str = f"{rsi1h:.1f}" if rsi1h is not None else "N/A"
+    atr_pct_str = f"{atr_pct15:.1f}" if atr_pct15 is not None else "N/A"
+
+    # Icono de compresión según ATR%
+    if atr_pct15 is not None and atr_pct15 < 20:
+        icono_atr = "🌀"
+    elif atr_pct15 is not None and atr_pct15 > 80:
+        icono_atr = "🔥"
+    else:
+        icono_atr = "  "
+
     velas_info = f"5m={len(cache['velas_5m'])} 15m={len(cache['velas_15m'])} 1h={len(cache['velas_1h'])}"
 
     print(
         f"   ✅ {symbol}: ${price:.6f} | RSI15={rsi15_str} {sample['dir15']} | "
-        f"RSI1h={rsi1h_str} | RVOL={sample['rvol15']:.2f} | "
+        f"RSI1h={rsi1h_str} | ATR%={icono_atr}{atr_pct_str} | "
+        f"RVOL={sample['rvol15']:.2f} | "
         f"pulso={len(pulso)} | {velas_info}",
         flush=True
     )
@@ -228,9 +290,9 @@ def main():
     ahora = datetime.now(timezone.utc)
 
     print("\n" + "=" * 70, flush=True)
-    print("📦 RECOLECTOR — interspot (Fase 2.0)", flush=True)
+    print("📦 RECOLECTOR — interspot (Fase 2.1 — ATR percentil 15m)", flush=True)
     print(f"   {len(SYMBOLS)} monedas | 5m, 15m, 1h", flush=True)
-    print(f"   BTC acumula histórico | Otras solo últimas 100", flush=True)
+    print(f"   BTC acumula histórico | Otras solo últimas 200", flush=True)
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {ahora.isoformat()}", flush=True)
 
