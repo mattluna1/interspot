@@ -154,5 +154,13 @@
     "currentLevel": 0.25435,
     "detected_at": 1791107768.478773,
     "entry_price": 0.2567
+  },
+  {
+    "symbol": "ZEN",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 6.988472222222222,
+    "detected_at": 1791108107.849695,
+    "entry_price": 6.982
   }
 ]
