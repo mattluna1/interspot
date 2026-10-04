@@ -70,5 +70,29 @@
     "tp2_nivel": null,
     "tp1_hit": false,
     "tp2_hit": false
+  },
+  {
+    "symbol": "SAND",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.07503111111111112,
+    "detected_at": 1791075659.859724,
+    "entry_price": 0.07496,
+    "tp1_nivel": 0.07525946666666666,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
+  },
+  {
+    "symbol": "MOVE",
+    "type": "support",
+    "timeframe": "1h",
+    "currentLevel": 0.010016009174311927,
+    "detected_at": 1791075659.859724,
+    "entry_price": 0.009956,
+    "tp1_nivel": 0.010089,
+    "tp2_nivel": null,
+    "tp1_hit": false,
+    "tp2_hit": false
   }
 ]
