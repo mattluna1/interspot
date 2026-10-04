@@ -122,5 +122,13 @@
     "currentLevel": 181.38000000000002,
     "detected_at": 1791093670.750358,
     "entry_price": 181.86
+  },
+  {
+    "symbol": "EIGEN",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.2635461538461538,
+    "detected_at": 1791094260.683291,
+    "entry_price": 0.2634
   }
 ]
