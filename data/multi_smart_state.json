@@ -130,5 +130,29 @@
     "currentLevel": 0.2635461538461538,
     "detected_at": 1791094260.683291,
     "entry_price": 0.2634
+  },
+  {
+    "symbol": "EGLD",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 4.597636363636364,
+    "detected_at": 1791107768.478773,
+    "entry_price": 4.594
+  },
+  {
+    "symbol": "MOVR",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 1.8616969696969699,
+    "detected_at": 1791107768.478773,
+    "entry_price": 1.849
+  },
+  {
+    "symbol": "SNX",
+    "type": "support",
+    "timeframe": "1h",
+    "currentLevel": 0.25435,
+    "detected_at": 1791107768.478773,
+    "entry_price": 0.2567
   }
 ]
