@@ -13,7 +13,9 @@ from pathlib import Path
 import requests
 
 # ============================================================
-# MULTI SMART — Filtro compresión BTC + 60 monedas + TPs
+# MULTI SMART — Fase 2.1
+#   Filtro compresión BTC (ATR% + NR7) + 60 monedas + LONG-only
+#   SIN sistema de TPs (eliminado)
 # ============================================================
 
 SYMBOLS = [
@@ -38,16 +40,29 @@ SMART_DIRECTION_SCORE_MIN_LONG = -20
 SMART_TOTAL_SCORE_MIN = 80
 
 # ============================================================
-# FILTRO 1 — COMPRESIÓN → EXPANSIÓN BTC
+# FILTRO BTC — ATR percentil + NR7 (reemplaza ratio fijo)
 # ============================================================
-COMP_VENTANA          = 4
+ATR_PERIOD            = 14
+ATR_VENTANA           = 100
+ATR_UMBRAL_COMPRESION = 20.0
+NR7_PERIOD            = 7
+
+COMP_FACTOR_EXPANSION = 3.0     # vela 3x más grande que promedio
+COMP_HORAS_RECIENTE   = 2       # expansión debe ser reciente
 COMP_MIN_VELAS        = 12
-COMP_RATIO_COMPRESION = 0.70
-COMP_FACTOR_EXPANSION = 3.0
-COMP_HORAS_RECIENTE   = 2
 COMP_MODO_FILTRO      = "hard"
 
 COMP_THROTTLE_MIN     = 30
+
+# ============================================================
+# CONTADOR DE DIAGNÓSTICO
+# ============================================================
+CONTADOR_FILTROS = {
+    "EDAD": 0,
+    "SIN_EXPANSION": 0,
+    "COMPRESION": 0,
+    "PASA": 0,
+}
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -55,7 +70,6 @@ DATA_DIR.mkdir(exist_ok=True)
 STATE_FILE = DATA_DIR / "multi_smart_state.json"
 CSV_FILE = DATA_DIR / "multi_smart.csv"
 HISTORICO_CSV_FILE = DATA_DIR / "multi_smart_historial_lineas.csv"
-TP_CSV_FILE = DATA_DIR / "multi_smart_tps.csv"
 
 THROTTLE_FILE = DATA_DIR / "multi_smart_throttle.json"
 THROTTLE_REMOTE = (
@@ -132,6 +146,7 @@ def leer_cache_remoto(symbol):
         "price": ultimo.get("price"),
         "rsi15": ultimo.get("rsi15"),
         "rsi1h": ultimo.get("rsi1h"),
+        "atr_pct15": ultimo.get("atr_pct15"),     # NUEVO
         "dir15": ultimo.get("dir15"),
         "dir1h": ultimo.get("dir1h"),
         "edad_min": edad_min,
@@ -157,37 +172,94 @@ def construir_velas(cache, tf="5m"):
     velas = []
     for v in velas_raw:
         try:
-            o, c = float(v.get("o")), float(v.get("c"))
-        except (TypeError, ValueError):
+            o = float(v["o"])
+            c = float(v["c"])
+            h = float(v.get("h", max(o, c)))
+            l = float(v.get("l", min(o, c)))
+        except (TypeError, ValueError, KeyError):
             continue
         velas.append({
             "timestamp": v["ts"] / 1000,
             "open": o,
             "close": c,
+            "high": h,
+            "low": l,
             "rango": abs(c - o),
         })
     return velas
 
 
+# ============================================================
+# ATR PERCENTIL + NR7
+# ============================================================
+
+def calcular_atr_percentile(velas, period=14, ventana=100):
+    if len(velas) < period + ventana + 1:
+        return None
+
+    trs = []
+    for i in range(1, len(velas)):
+        high = velas[i]["high"]
+        low  = velas[i]["low"]
+        pc   = velas[i-1]["close"]
+        tr = max(high - low, abs(high - pc), abs(low - pc))
+        trs.append(tr)
+
+    if len(trs) < period + ventana:
+        return None
+
+    atrs = []
+    suma = sum(trs[:period])
+    atrs.append(suma / period)
+    for i in range(period, len(trs)):
+        suma = suma - trs[i - period] + trs[i]
+        atrs.append(suma / period)
+
+    if len(atrs) < ventana:
+        return None
+
+    actual = atrs[-1]
+    historico = atrs[-ventana:]
+    menores = sum(1 for x in historico if x <= actual)
+    return round((menores / len(historico)) * 100, 2)
+
+
+def es_nr7(velas, period=7):
+    """NR7: la vela actual tiene el rango más estrecho de las últimas 7."""
+    if len(velas) < period:
+        return False
+    rangos = [v["rango"] for v in velas[-period:]]
+    return rangos[-1] == min(rangos)
+
+
+# ============================================================
+# ANÁLISIS DE PATRÓN BTC (ATR% + expansión)
+# ============================================================
+
 def analizar_patron_btc(btc_cache):
+    global CONTADOR_FILTROS
+
     if not btc_cache:
+        CONTADOR_FILTROS["SIN_EXPANSION"] += 1
         return {"pasa": False, "estado": "sin_datos", "detalle": "sin cache BTC"}
 
     velas = construir_velas(btc_cache, "5m")
     n = len(velas)
 
     if n < COMP_MIN_VELAS:
+        CONTADOR_FILTROS["SIN_EXPANSION"] += 1
         return {"pasa": False, "estado": "sin_datos", "detalle": f"solo {n} velas"}
 
-    v = COMP_VENTANA
-    r_ult = _media([x["rango"] for x in velas[-v:]])
-    r_pre = _media([x["rango"] for x in velas[-2*v:-v]])
-
-    if r_pre <= 0:
-        return {"pasa": False, "estado": "neutral", "detalle": "sin rango previo"}
-
-    ratio = r_ult / r_pre
     ahora = datetime.now(timezone.utc).timestamp()
+
+    # --- Nuevas métricas ---
+    atr_pct = calcular_atr_percentile(velas, ATR_PERIOD, ATR_VENTANA)
+    nr7 = es_nr7(velas, NR7_PERIOD)
+
+    # ═══════════════════════════════════════════════════════════
+    # BÚSQUEDA DE EXPANSIÓN
+    # ═══════════════════════════════════════════════════════════
+    hay_expansion = False
 
     for k in range(max(0, n - 8), n):
         vela_actual = velas[k]["rango"]
@@ -195,28 +267,64 @@ def analizar_patron_btc(btc_cache):
         if not anteriores:
             continue
         prom_previo = _media(anteriores)
-        if prom_previo > 0 and vela_actual > prom_previo * COMP_FACTOR_EXPANSION:
-            edad_h = (ahora - velas[k]["timestamp"]) / 3600
-            if edad_h <= COMP_HORAS_RECIENTE:
-                d = "up" if velas[k]["close"] > velas[k]["open"] else "down"
-                return {
-                    "pasa": True,
-                    "estado": "expandiendo",
-                    "direccion": d,
-                    "precio": velas[k]["close"],
-                    "fuerza": vela_actual / prom_previo,
-                    "edad_h": edad_h,
-                    "detalle": f"expansión {d.upper()} hace {edad_h:.1f}h "
-                               f"({vela_actual / prom_previo:.1f}x)"
-                }
+        if not (prom_previo > 0 and vela_actual > prom_previo * COMP_FACTOR_EXPANSION):
+            continue
 
-    if ratio < COMP_RATIO_COMPRESION:
-        return {"pasa": True, "estado": "comprimiendo",
-                "detalle": f"comprimiendo {ratio:.2f}x"}
+        hay_expansion = True
+        fuerza_x = vela_actual / prom_previo
+        edad_h = (ahora - velas[k]["timestamp"]) / 3600
+
+        if edad_h > COMP_HORAS_RECIENTE:
+            CONTADOR_FILTROS["EDAD"] += 1
+            print(f"   ⏭️ Expansión rechazada por EDAD ({edad_h:.1f}h)", flush=True)
+            continue
+
+        d = "up" if velas[k]["close"] > velas[k]["open"] else "down"
+
+        print(f"   ✅ EXPANSIÓN {d.upper()} CONFIRMADA — "
+              f"fuerza {fuerza_x:.1f}x hace {edad_h:.1f}h | "
+              f"ATR% {atr_pct if atr_pct is not None else 'N/A'}", flush=True)
+
+        CONTADOR_FILTROS["PASA"] += 1
+        return {
+            "pasa": True,
+            "estado": "expandiendo",
+            "direccion": d,
+            "precio": velas[k]["close"],
+            "fuerza": fuerza_x,
+            "edad_h": edad_h,
+            "atr_pct": atr_pct,
+            "nr7": nr7,
+            "detalle": f"expansión {d.upper()} hace {edad_h:.1f}h "
+                       f"({fuerza_x:.1f}x) | ATR% {atr_pct if atr_pct is not None else 'N/A'}",
+        }
+
+    if not hay_expansion:
+        CONTADOR_FILTROS["SIN_EXPANSION"] += 1
+
+    # ═══════════════════════════════════════════════════════════
+    # SIN EXPANSIÓN — EVALUAR COMPRESIÓN
+    # ═══════════════════════════════════════════════════════════
+    if atr_pct is not None and atr_pct < ATR_UMBRAL_COMPRESION:
+        CONTADOR_FILTROS["COMPRESION"] += 1
+        nr7_txt = " | NR7 ✅" if nr7 else ""
+        detalle = f"compresión ATR%={atr_pct:.1f} (<{ATR_UMBRAL_COMPRESION}){nr7_txt}"
+        print(f"   🌀 COMPRESIÓN — {detalle}", flush=True)
+        return {
+            "pasa": False,
+            "estado": "comprimiendo",
+            "atr_pct": atr_pct,
+            "nr7": nr7,
+            "detalle": detalle,
+        }
 
     return {"pasa": False, "estado": "neutral",
-            "detalle": f"rango normal ({ratio:.2f}x)"}
+            "detalle": f"rango normal (ATR% {atr_pct if atr_pct is not None else 'N/A'})"}
 
+
+# ============================================================
+# THROTTLE
+# ============================================================
 
 def cargar_throttle():
     try:
@@ -245,6 +353,10 @@ def guardar_throttle(estado):
     except Exception as e:
         print(f"⚠️ No se pudo guardar throttle: {e}", flush=True)
 
+
+# ============================================================
+# PUMP EVENTS
+# ============================================================
 
 def consultar_pumping_events():
     token = os.environ.get("COINBEACON_TOKEN")
@@ -302,6 +414,10 @@ def pd_para_symbol(symbol, pd_index):
         resultado["activo"] = True
     return resultado
 
+
+# ============================================================
+# HELPERS
+# ============================================================
 
 def numero(valor):
     if valor is None:
@@ -524,26 +640,6 @@ def analizar_coinbeacon(symbol):
     return {"price": precio, "lines": todas}
 
 
-def obtener_resistencias_cercanas(lineas, precio_actual, max_items=2):
-    if not lineas or precio_actual is None:
-        return []
-    resistencias = []
-    for linea in lineas:
-        if linea.get("type") != "resistance":
-            continue
-        nivel = linea.get("currentLevel")
-        if nivel is None or nivel <= precio_actual:
-            continue
-        distancia_pct = ((nivel - precio_actual) / precio_actual) * 100
-        resistencias.append({
-            "nivel": nivel, "distancia_pct": distancia_pct,
-            "timeframe": linea.get("timeframe"),
-            "confianza": linea.get("confidence"),
-        })
-    resistencias.sort(key=lambda x: x["distancia_pct"])
-    return resistencias[:max_items]
-
-
 def send_telegram_message(message):
     if not hora_permite_envio():
         return False
@@ -571,10 +667,9 @@ def guardar_en_csv(alert_data):
         "currentLevel", "touchCount", "confidence", "rvoll", "volumeTrend",
         "score", "status", "fallingOrRising", "price",
         "tipo_efectivo", "rsi1h", "rsi15m", "tendencia",
-        "btc_dir", "btc_modo", "btc_estado",
+        "btc_dir", "btc_modo", "btc_estado", "atr_pct_btc",
         "pd_tipo", "pd_pct", "pd_rvol", "pd_conf",
         "smart_direction", "smart_line_score",
-        "tp1_nivel", "tp1_dist", "tp2_nivel", "tp2_dist",
         "structure_quality", "total_score"
     ]
     if not CSV_FILE.exists():
@@ -582,18 +677,6 @@ def guardar_en_csv(alert_data):
             csv.DictWriter(f, fieldnames=fieldnames).writeheader()
     with CSV_FILE.open("a", newline="", encoding="utf-8") as f:
         csv.DictWriter(f, fieldnames=fieldnames).writerow(alert_data)
-
-
-def guardar_tp_csv(tp_data):
-    fieldnames = [
-        "hora_lima", "symbol", "tp_num", "tp_nivel", "entry_price",
-        "precio_actual", "ganancia_pct", "detected_at_signal"
-    ]
-    if not TP_CSV_FILE.exists():
-        with TP_CSV_FILE.open("w", newline="", encoding="utf-8") as f:
-            csv.DictWriter(f, fieldnames=fieldnames).writeheader()
-    with TP_CSV_FILE.open("a", newline="", encoding="utf-8") as f:
-        csv.DictWriter(f, fieldnames=fieldnames).writerow(tp_data)
 
 
 def guardar_historico_linea(symbol, linea, rsi_data, hora_lima, tipo_efectivo=None):
@@ -663,101 +746,6 @@ def guardar_estado(estado):
         json.dump(estado, f, indent=2)
 
 
-def _prioridad_patron(linea):
-    s = str(linea.get("status", "")).lower()
-    if "near" in s: return 2
-    if "retest" in s: return 1
-    return 0
-
-
-def revisar_tps_pendientes(previous_state):
-    ahora_lima = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M:%S")
-    nuevo_state = []
-    avisos = 0
-
-    print("\n🎯 REVISANDO TPs PENDIENTES", flush=True)
-
-    for item in previous_state:
-        if item.get("type") == "btc_rsi":
-            nuevo_state.append(item)
-            continue
-
-        symbol = item.get("symbol")
-        tp1 = item.get("tp1_nivel")
-        tp2 = item.get("tp2_nivel")
-        entry = item.get("entry_price")
-        tp1_hit = item.get("tp1_hit", False)
-        tp2_hit = item.get("tp2_hit", False)
-
-        if tp1 is None and tp2 is None:
-            nuevo_state.append(item)
-            continue
-
-        cache = leer_cache_remoto(symbol)
-        precio_actual = cache.get("price") if cache else None
-        if precio_actual is None:
-            nuevo_state.append(item)
-            continue
-
-        if tp2 is not None and precio_actual >= tp2 and not tp2_hit:
-            msg = (
-                f"🧠 MULTI SMART\n"
-                f"🎉 TP2 ALCANZADO — {symbol}\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"📈 Precio actual: ${precio_actual:.6f}\n"
-                f"🎯 TP2: ${tp2:.6f}\n"
-                f"💰 Entrada: ${entry:.6f}\n"
-                f"📈 Ganancia: {((precio_actual - entry) / entry) * 100:+.2f}%\n"
-                f"🔓 Se libera para re-alerta en pullback\n"
-                f"🕐 {ahora_lima}\n"
-                f"━━━━━━━━━━━━━━━━━━━"
-            )
-            if send_telegram_message(msg):
-                avisos += 1
-                guardar_tp_csv({
-                    "hora_lima": ahora_lima, "symbol": symbol,
-                    "tp_num": 2, "tp_nivel": f"{tp2:.6f}",
-                    "entry_price": f"{entry:.6f}",
-                    "precio_actual": f"{precio_actual:.6f}",
-                    "ganancia_pct": f"{((precio_actual - entry) / entry) * 100:+.2f}",
-                    "detected_at_signal": item.get("detected_at", ""),
-                })
-            continue
-
-        if tp1 is not None and precio_actual >= tp1 and not tp1_hit:
-            linea_tp2 = f"🎯 Próximo objetivo TP2: ${tp2:.6f}\n" if tp2 else ""
-            msg = (
-                f"🧠 MULTI SMART\n"
-                f"✅ TP1 ALCANZADO — {symbol}\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"📈 Precio actual: ${precio_actual:.6f}\n"
-                f"🎯 TP1: ${tp1:.6f}\n"
-                f"💰 Entrada: ${entry:.6f}\n"
-                f"📈 Ganancia: {((precio_actual - entry) / entry) * 100:+.2f}%\n"
-                f"{linea_tp2}"
-                f"🕐 {ahora_lima}\n"
-                f"━━━━━━━━━━━━━━━━━━━"
-            )
-            if send_telegram_message(msg):
-                avisos += 1
-                guardar_tp_csv({
-                    "hora_lima": ahora_lima, "symbol": symbol,
-                    "tp_num": 1, "tp_nivel": f"{tp1:.6f}",
-                    "entry_price": f"{entry:.6f}",
-                    "precio_actual": f"{precio_actual:.6f}",
-                    "ganancia_pct": f"{((precio_actual - entry) / entry) * 100:+.2f}",
-                    "detected_at_signal": item.get("detected_at", ""),
-                })
-            item["tp1_hit"] = True
-            nuevo_state.append(item)
-            continue
-
-        nuevo_state.append(item)
-
-    print(f"   Avisos TP: {avisos}", flush=True)
-    return nuevo_state, avisos
-
-
 def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
                          btc_context, pd_index=None):
     precio = coin_data.get("price")
@@ -771,7 +759,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
     if btc_dir != "up":
         return []
 
-    operacion_permitida = "LONG"
     pd = pd_para_symbol(symbol, pd_index or {})
 
     volume = volume_by_symbol.get(symbol + "USDT") or volume_by_symbol.get(symbol)
@@ -858,9 +845,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
 
     final_candidates.sort(key=lambda x: x["score"], reverse=True)
 
-    # ═══════════════════════════════════════════════════════════
-    # CAMBIO 3: Dedup por símbolo — preferir 1h sobre 15m
-    # ═══════════════════════════════════════════════════════════
     seen = {}
     for cand in final_candidates:
         sym = cand["line"].get("symbol", "").replace("USDT", "").upper()
@@ -874,10 +858,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
 
     filtered = list(seen.values())
     filtered.sort(key=lambda x: x["score"], reverse=True)
-
-    resistencias_cercanas = obtener_resistencias_cercanas(lineas, precio, max_items=2)
-    tp1 = resistencias_cercanas[0] if len(resistencias_cercanas) > 0 else None
-    tp2 = resistencias_cercanas[1] if len(resistencias_cercanas) > 1 else None
 
     alerts = []
     for cand in filtered:
@@ -907,7 +887,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             "smart_direction": linea.get("direction_score"),
             "smart_bias": linea.get("bias"),
             "smart_line_score": linea.get("line_score"),
-            "tp1": tp1, "tp2": tp2,
             "entry_price": linea.get("price"),
         })
     return alerts
@@ -991,9 +970,8 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         smart_line_score_str = f"{smart_line_score:.1f}" if smart_line_score is not None else "N/A"
         smart_linea = f"🧠 Smart: {smart_conf_str} | Dir {smart_dir_str} | Bias {str(smart_bias).upper()} | Score {smart_line_score_str}"
 
-        tp1 = alert.get("tp1")
-        tp2 = alert.get("tp2")
-        entry_price = alert.get("entry_price") or precio_actual
+        btc_atr = btc_context.get("atr_pct", "N/A")
+        btc_atr_str = f"{btc_atr:.1f}" if isinstance(btc_atr, (int, float)) else str(btc_atr)
 
         msg = (
             f"🧠 MULTI SMART\n"
@@ -1004,17 +982,18 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
             f"   • Nivel: ${nivel_linea:.6f}\n"
             f"   • Toques: {line.get('touchCount', 0)} ({alert['structure_quality']})\n"
             f"🎯 Score: {alert['score']:.1f}\n"
+            f"📊 BTC: {btc_dir_str} {btc_modo_str} | ATR% {btc_atr_str}\n"
+            f"📈 RSI 1h={rsi1h_str} | 15m={rsi15m_str}\n"
+            f"{pd_linea}\n"
+            f"{smart_linea}\n"
             f"🕐 {now_lima}"
         )
+        if tag_text:
+            msg += f"\n{tag_text}"
 
         if send_telegram_message(msg):
             sent_count += 1
             print(f"   🟢 LONG {symbol} [{tipo_op_txt}] → enviado", flush=True)
-
-            tp1_nivel = tp1["nivel"] if tp1 else None
-            tp2_nivel = tp2["nivel"] if tp2 else None
-            tp1_dist = tp1["distancia_pct"] if tp1 else None
-            tp2_dist = tp2["distancia_pct"] if tp2 else None
 
             guardar_en_csv({
                 "hora_lima": now_lima, "symbol": symbol, "bias": "LONG",
@@ -1030,16 +1009,13 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
                 "rsi1h": rsi1h_str, "rsi15m": rsi15m_str, "tendencia": tendencia,
                 "btc_dir": btc_dir_str, "btc_modo": btc_modo_str,
                 "btc_estado": "FAVORABLE",
+                "atr_pct_btc": btc_atr_str,
                 "pd_tipo": pd_tipo or "",
                 "pd_pct": f"{pd_pct:+.2f}" if pd_tipo else "",
                 "pd_rvol": f"{pd_rvol:.2f}" if pd_tipo else "",
                 "pd_conf": "1" if pd_vol_conf else "0",
                 "smart_direction": smart_dir_str,
                 "smart_line_score": smart_line_score_str,
-                "tp1_nivel": f"{tp1_nivel:.6f}" if tp1_nivel else "",
-                "tp1_dist": f"{tp1_dist:+.2f}" if tp1_dist else "",
-                "tp2_nivel": f"{tp2_nivel:.6f}" if tp2_nivel else "",
-                "tp2_dist": f"{tp2_dist:+.2f}" if tp2_dist else "",
                 "structure_quality": alert['structure_quality'],
                 "total_score": f"{alert['score']:.1f}",
             })
@@ -1049,8 +1025,6 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
                 "timeframe": line.get("timeframe"),
                 "currentLevel": nivel_linea, "detected_at": now_ts,
                 "entry_price": precio_actual,
-                "tp1_nivel": tp1_nivel, "tp2_nivel": tp2_nivel,
-                "tp1_hit": False, "tp2_hit": False,
             })
 
     return sent_count, long_count, new_state
@@ -1089,14 +1063,42 @@ def analizar_rsi_de_cache(symbol):
     return datos
 
 
-def main():
+# ============================================================
+# RESUMEN DIAGNÓSTICO
+# ============================================================
+
+def imprimir_resumen_diagnostico():
+    total = sum(CONTADOR_FILTROS.values())
     print("\n" + "=" * 70, flush=True)
-    print("🚀 MULTI SMART — Filtro compresión BTC + 60 monedas + TPs", flush=True)
+    print("🔬 DIAGNÓSTICO — ¿Qué detuvo cada señal en este run?", flush=True)
+    print("=" * 70, flush=True)
+
+    if total == 0:
+        print("   (Sin evaluaciones registradas)", flush=True)
+        return
+
+    orden = sorted(CONTADOR_FILTROS.items(), key=lambda x: -x[1])
+    for nombre, count in orden:
+        if count == 0:
+            continue
+        pct = (count / total) * 100
+        barra = "█" * int(pct / 3)
+        print(f"   {nombre:15s} {count:3d}  ({pct:5.1f}%)  {barra}", flush=True)
+
+    print("-" * 70, flush=True)
+    print(f"   TOTAL evaluaciones: {total}", flush=True)
+
+
+def main():
+    global CONTADOR_FILTROS
+    CONTADOR_FILTROS = {k: 0 for k in CONTADOR_FILTROS}
+
+    print("\n" + "=" * 70, flush=True)
+    print("🚀 MULTI SMART — Fase 2.1 (ATR% + NR7, sin TPs)", flush=True)
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
 
     previous_state = cargar_estado()
-    previous_state, tp_avisos = revisar_tps_pendientes(previous_state)
 
     print("\n🔍 FILTRO BTC (compresión → expansión)...", flush=True)
     btc_cache_full = leer_cache_remoto(BTC_SYMBOL)
@@ -1126,21 +1128,55 @@ def main():
 
     if debe_avisar:
         guardar_throttle(estado_actual)
-        print(f"   📝 Throttle actualizado a: {estado_actual}", flush=True)
-    else:
-        print(f"   🔇 Throttle activo (estado no cambió)", flush=True)
+        ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
 
-    if not patron_btc["pasa"]:
-        print(f"\n⏸️ Filtro BTC no pasó ({estado_actual.upper()}) → sin análisis", flush=True)
+        if estado_actual == "comprimiendo":
+            atr_pct_txt = patron_btc.get("atr_pct")
+            nr7_val = patron_btc.get("nr7", False)
+            atr_str = f"ATR%: {atr_pct_txt:.1f}" if atr_pct_txt is not None else "ATR%: N/A"
+            nr7_str = " | NR7 ✅" if nr7_val else ""
+            send_telegram_message(
+                f"🧠 MULTI SMART\n"
+                f"🌀 COMPRESIÓN BTC DETECTADA\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"   {atr_str}{nr7_str}\n"
+                f"⏳ Esperando ruptura (UP o DOWN)\n"
+                f"🕐 {ahora_lima_str} (Lima)"
+            )
+        elif estado_actual == "expandiendo":
+            direccion = patron_btc.get("direccion", "?")
+            emoji_op = "🟢" if direccion == "up" else "🔴"
+            op_txt = "LONG" if direccion == "up" else "SHORT"
+            precio_actual = patron_btc.get("precio", 0)
+            fuerza = patron_btc.get("fuerza", 0)
+            edad_h = patron_btc.get("edad_h", 0)
+            atr_pct_txt = patron_btc.get("atr_pct")
+            atr_line = f"📊 ATR%: {atr_pct_txt:.1f}\n" if atr_pct_txt is not None else ""
+
+            send_telegram_message(
+                f"🧠 MULTI SMART\n"
+                f"🔥 EXPANSIÓN {direccion.upper()} — {emoji_op} {op_txt} BTC\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"📍 Precio: ${precio_actual:,.2f}\n"
+                f"📊 Fuerza: {fuerza:.1f}x hace {edad_h:.1f}h\n"
+                f"{atr_line}"
+                f"✅ Filtro pasa → analizando monedas...\n"
+                f"🕐 {ahora_lima_str} (Lima)"
+            )
+    else:
+        print("   🔇 Throttle activo — sin envío", flush=True)
+
+    if COMP_MODO_FILTRO == "hard" and not patron_btc["pasa"]:
+        print(f"\n⏸️ Filtro no pasó ({estado_actual.upper()}) — abortando en silencio", flush=True)
+        imprimir_resumen_diagnostico()
         now_ts = datetime.now(timezone.utc).timestamp()
         new_state = list(previous_state)
         guardar_estado(new_state)
         return
 
     if estado_actual == "expandiendo" and patron_btc.get("direccion") == "down":
-        print(f"\n⚠️ BTC DOWN → enviando aviso informativo", flush=True)
+        print(f"\n⚠️ BTC DOWN → aviso informativo", flush=True)
         ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
-        # CAMBIO 2: título 🧠 MULTI SMART en BTC DOWN
         send_telegram_message(
             f"🧠 MULTI SMART\n"
             f"📉 BTC DOWN DETECTADO\n"
@@ -1152,6 +1188,7 @@ def main():
         now_ts = datetime.now(timezone.utc).timestamp()
         new_state = list(previous_state)
         guardar_estado(new_state)
+        imprimir_resumen_diagnostico()
         return
 
     print(f"\n✅ Filtro pasa → analizando monedas", flush=True)
@@ -1161,6 +1198,7 @@ def main():
         "btc_modo": "fuerte",
         "estado": "FAVORABLE",
         "price": btc_cache_full.get("price") if btc_cache_full else None,
+        "atr_pct": patron_btc.get("atr_pct"),
     }
 
     print("\n📡 PUMP EVENTS", flush=True)
@@ -1181,7 +1219,6 @@ def main():
 
     now_ts = datetime.now(timezone.utc).timestamp()
     filtered_previous = limpiar_estado(previous_state, now_ts)
-    alertas_previas = [it for it in filtered_previous if it.get("type") != "btc_rsi"]
     hora_lima = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M:%S")
 
     all_alerts = []
@@ -1192,16 +1229,17 @@ def main():
     all_alerts.sort(key=lambda x: -x["score"])
 
     sent_count, long_count, new_state = procesar_alertas(
-        all_alerts, alertas_previas, btc_context, pd_index
+        all_alerts, filtered_previous, btc_context, pd_index
     )
 
     guardar_estado(new_state)
+
+    imprimir_resumen_diagnostico()
 
     print("\n" + "=" * 70, flush=True)
     print("📢 RESULTADO FINAL", flush=True)
     print("=" * 70, flush=True)
     print(f"Alertas LONG: {sent_count}", flush=True)
-    print(f"Avisos TP: {tp_avisos}", flush=True)
     print(f"Monedas analizadas: {len(monedas_a_analizar)}", flush=True)
     print("\n🏁 PROGRAMA TERMINADO", flush=True)
 
