@@ -178,5 +178,21 @@
     "currentLevel": 0.019110000000000002,
     "detected_at": 1791108370.199362,
     "entry_price": 0.01919
+  },
+  {
+    "symbol": "NEO",
+    "type": "support",
+    "timeframe": "1h",
+    "currentLevel": 2.5312824427480916,
+    "detected_at": 1791147691.631613,
+    "entry_price": 2.552
+  },
+  {
+    "symbol": "FTT",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.25472,
+    "detected_at": 1791147691.631613,
+    "entry_price": 0.2566
   }
 ]
