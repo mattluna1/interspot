@@ -194,5 +194,13 @@
     "currentLevel": 0.25472,
     "detected_at": 1791147691.631613,
     "entry_price": 0.2566
+  },
+  {
+    "symbol": "XPL",
+    "type": "support",
+    "timeframe": "15m",
+    "currentLevel": 0.0959870786516854,
+    "detected_at": 1791148571.000244,
+    "entry_price": 0.09588
   }
 ]
