@@ -6,8 +6,12 @@ on:
 permissions:
   contents: write
 
+# ═══════════════════════════════════════════════════════════════
+# IMPORTANTE: group único para no chocar con otros workflows
+# del mismo repo (RECOLECTOR, etc.)
+# ═══════════════════════════════════════════════════════════════
 concurrency:
-  group: multi-smart
+  group: multi-smart-bot
   cancel-in-progress: true
 
 jobs:
