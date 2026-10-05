@@ -9,9 +9,9 @@ from pathlib import Path
 
 # ============================================================
 # RECOLECTOR — interspot (Fase 2.0)
-#   21 monedas (BTC + 20 alt)
+#   17 monedas (BTC + 16 alt)
 #   Fetches: 5m, 15m, 1h
-#   Acumula: BTC (histórico), otras (solo últimas 100)
+#   Acumula: BTC (histórico), otras 16 (solo últimas 100)
 # ============================================================
 
 SYMBOLS = [
@@ -29,11 +29,13 @@ DATA_DIR.mkdir(exist_ok=True)
 CACHE_DIR = DATA_DIR / "cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
+
 OKX_INTERVALOS = {
     "5m":  "5m",
     "15m": "15m",
     "1h":  "1H",
 }
+
 
 def fetch_okx_klines(symbol, intervalo, limite=OKX_LIMIT_VELAS):
     bar = OKX_INTERVALOS.get(intervalo)
@@ -74,6 +76,7 @@ def fetch_okx_klines(symbol, intervalo, limite=OKX_LIMIT_VELAS):
             continue
     return velas
 
+
 def acumular_velas(existentes, nuevas, retencion_h):
     if not existentes:
         existentes = []
@@ -86,6 +89,7 @@ def acumular_velas(existentes, nuevas, retencion_h):
     ahora_ms = datetime.now(timezone.utc).timestamp() * 1000
     limite_ms = ahora_ms - (retencion_h * 3600 * 1000)
     return [v for v in existentes if v["ts"] >= limite_ms]
+
 
 def calcular_rsi(prices, period=14):
     if not prices or len(prices) < period + 1:
@@ -106,8 +110,10 @@ def calcular_rsi(prices, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
+
 def cache_path(symbol):
     return CACHE_DIR / f"{symbol}.json"
+
 
 def cargar_cache(symbol):
     p = cache_path(symbol)
@@ -123,9 +129,11 @@ def cargar_cache(symbol):
         print(f"   ⚠️ cache {symbol} corrupto: {e}", flush=True)
         return {"symbol": symbol, "updated_at": None, "pulso": []}
 
+
 def guardar_cache(symbol, data):
     with cache_path(symbol).open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+
 
 def actualizar_pulso(symbol, ahora):
     velas_5m  = fetch_okx_klines(symbol, "5m",  OKX_LIMIT_VELAS)
@@ -191,6 +199,7 @@ def actualizar_pulso(symbol, ahora):
     cache["updated_at"] = ahora.isoformat()
     cache["pulso"] = pulso
 
+    # BTC acumula velas, resto solo últimas 100
     if symbol == "BTC":
         cache["velas_5m"]  = acumular_velas(cache.get("velas_5m",  []), velas_5m,  168)
         cache["velas_15m"] = acumular_velas(cache.get("velas_15m", []), velas_15m, 336)
@@ -214,11 +223,12 @@ def actualizar_pulso(symbol, ahora):
     )
     return True
 
+
 def main():
     ahora = datetime.now(timezone.utc)
 
     print("\n" + "=" * 70, flush=True)
-    print("📦 RECOLECTOR BTC P — interspot (Fase 2.0)", flush=True)
+    print("📦 RECOLECTOR — interspot (Fase 2.0)", flush=True)
     print(f"   {len(SYMBOLS)} monedas | 5m, 15m, 1h", flush=True)
     print(f"   BTC acumula histórico | Otras solo últimas 100", flush=True)
     print("=" * 70, flush=True)
@@ -239,6 +249,7 @@ def main():
     print(f"Fallidos:   {fallidos}", flush=True)
     print(f"\n💾 Cache dir: {CACHE_DIR}", flush=True)
     print("🏁 PROGRAMA TERMINADO", flush=True)
+
 
 if __name__ == "__main__":
     try:
