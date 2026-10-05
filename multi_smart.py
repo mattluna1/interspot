@@ -102,8 +102,8 @@ PD_VENTANA_MIN = 10
 PD_MIN_PCT = 2.0
 
 CACHE_REMOTE_BASE = (
-    "https://raw.githubusercontent.com/mattluna1/"
-    "interspot/main/data/cache"
+    "https://raw.githubusercontent.com/mattlunaluna2/"
+    "coins/main/data/cache"
 )
 CACHE_MAX_EDAD_MIN = 40
 
