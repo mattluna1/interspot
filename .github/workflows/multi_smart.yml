@@ -1,96 +1,113 @@
+Multi Smart — YAML corregido
+
+
 name: Multi Smart
 
 on:
-  # schedule:
-  #   - cron: '*/5 * * * *'   # ← lo dispara cron-job.org
-  workflow_dispatch:
+schedule:
+- cron: '*/5 * * * *'
+workflow_dispatch:
 
 permissions:
-  contents: write
+contents: write
 
-# ═══════════════════════════════════════════════════════════════
-# CONCURRENCY — cancel-in-progress: true es CLAVE
-# ═══════════════════════════════════════════════════════════════
-# Si llega un nuevo run mientras otro corre → cancela el viejo
-# y arranca el nuevo. Así NUNCA se apilan.
-# ═══════════════════════════════════════════════════════════════
+No cancelar una ejecución que ya está corriendo.
+Si llega otra, espera a que termine la anterior.
 concurrency:
-  group: multi-smart
-  cancel-in-progress: true
+group: multi-smart
+cancel-in-progress: false
 
 jobs:
-  run-bot:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5        # ← mata runs colgados
+run-bot:
+runs-on: ubuntu-latest
+timeout-minutes: 10
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+steps:
+  # ============================================================
+  # CHECKOUT
+  # ============================================================
+  - name: Checkout repository
+    uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+  # ============================================================
+  # PYTHON
+  # ============================================================
+  - name: Setup Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: '3.10'
 
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install requests
+  # ============================================================
+  # DEPENDENCIAS
+  # ============================================================
+  - name: Install dependencies
+    run: |
+      python -m pip install --upgrade pip
+      pip install requests
 
-      - name: Verify Python
-        run: |
-          python --version
-          python -m py_compile multi_smart.py
-          echo "✅ Python OK"
+  # ============================================================
+  # VERIFICAR PYTHON
+  # ============================================================
+  - name: Verify Python
+    run: |
+      python --version
+      python -m py_compile multi_smart.py
+      echo "✅ Python OK"
 
-      - name: Run Multi Smart
-        env:
-          COINGECKO_API_KEY:  ${{ secrets.COINGECKO_API_KEY }}
-          COINBEACON_TOKEN:   ${{ secrets.COINBEACON_TOKEN }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          echo "========================================"
-          echo "🚀 INICIO MULTI SMART"
-          date -u
-          echo "========================================"
+  # ============================================================
+  # EJECUTAR MULTI SMART
+  # ============================================================
+  - name: Run Multi Smart
+    env:
+      COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+      COINBEACON_TOKEN: ${{ secrets.COINBEACON_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    run: |
+      echo "========================================"
+      echo "🚀 INICIO MULTI SMART"
+      date -u
+      echo "========================================"
 
-          python -u multi_smart.py
+      python -u multi_smart.py
 
-          echo "========================================"
-          echo "🏁 FIN MULTI SMART"
-          date -u
-          echo "========================================"
+      echo "========================================"
+      echo "🏁 FIN MULTI SMART"
+      date -u
+      echo "========================================"
 
-      - name: Save state
-        if: always()
-        timeout-minutes: 3
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+  # ============================================================
+  # GUARDAR ESTADO / CSV
+  # ============================================================
+  - name: Save state
+    if: always()
+    timeout-minutes: 3
+    run: |
+      git config user.name "github-actions[bot]"
+      git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add data/ 2>/dev/null || true
+      git add data/ 2>/dev/null || true
 
-          if git diff --cached --quiet; then
-            echo "📭 No hay cambios para guardar."
-            exit 0
-          fi
+      if git diff --cached --quiet; then
+        echo "📭 No hay cambios para guardar."
+        exit 0
+      fi
 
-          git commit -m "data: multi_smart state [skip ci]"
+      git commit -m "data: multi_smart state [skip ci]"
 
-          for i in 1 2 3; do
-            echo "🔄 Push intento $i..."
+      for i in 1 2 3; do
+        echo "🔄 Push intento $i..."
 
-            git pull --rebase origin main && \
-            git push origin HEAD:main && \
-            echo "✅ Push OK" && \
-            exit 0
+        if git pull --rebase origin main && git push origin HEAD:main; then
+          echo "✅ Push OK"
+          exit 0
+        fi
 
-            echo "⚠️ Push falló, esperando..."
-            sleep 10
-          done
+        echo "⚠️ Push falló, esperando 10 segundos..."
+        sleep 10
+      done
 
-          echo "❌ No se pudo hacer push después de 3 intentos."
-          exit 1
+      echo "❌ No se pudo hacer push después de 3 intentos."
+      exit 1
