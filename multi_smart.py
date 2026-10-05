@@ -1385,7 +1385,6 @@ def main():
             direccion = patron_btc.get("direccion", "?")
             ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
 
-            # Solo notificamos la expansión si es UP (los LONGs son los que operamos)
             if direccion == "up":
                 precio_actual = patron_btc.get("precio", 0)
                 fuerza = patron_btc.get("fuerza", 0)
