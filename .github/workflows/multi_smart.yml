@@ -2,20 +2,26 @@ name: Multi Smart
 
 on:
   # schedule:
-  #   - cron: '*/5 * * * *'   # DESACTIVADO: lo dispara cron-job.org
+  #   - cron: '*/5 * * * *'   # ← lo dispara cron-job.org
   workflow_dispatch:
 
 permissions:
   contents: write
 
+# ═══════════════════════════════════════════════════════════════
+# CONCURRENCY — cancel-in-progress: true es CLAVE
+# ═══════════════════════════════════════════════════════════════
+# Si llega un nuevo run mientras otro corre → cancela el viejo
+# y arranca el nuevo. Así NUNCA se apilan.
+# ═══════════════════════════════════════════════════════════════
 concurrency:
   group: multi-smart
-  cancel-in-progress: true    # ← Cancela runs viejos si llega uno nuevo
+  cancel-in-progress: true
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 5        # ← Mata runs colgados a los 5 min
+    timeout-minutes: 5        # ← mata runs colgados
 
     steps:
       - name: Checkout repository
@@ -60,7 +66,7 @@ jobs:
 
       - name: Save state
         if: always()
-        timeout-minutes: 3      # ← También le pongo timeout
+        timeout-minutes: 3
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
