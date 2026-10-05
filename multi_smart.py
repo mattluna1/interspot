@@ -263,7 +263,7 @@ def es_nr7(velas, period=7):
 
 
 # ============================================================
-# SQUEEZE MOMENTUM (LazyBear) — portado de multi_tf_coinbeaconB
+# SQUEEZE MOMENTUM (LazyBear)
 # ============================================================
 
 def _sma(serie, length):
@@ -361,7 +361,7 @@ def calcular_squeeze_momentum(velas, length=20, mult=2.0,
 
 
 # ============================================================
-# ADX — portado de multi_tf_coinbeaconB
+# ADX
 # ============================================================
 
 def calcular_adx(velas, length=14):
@@ -425,7 +425,7 @@ def calcular_adx(velas, length=14):
 
 
 # ============================================================
-# ANÁLISIS DE PATRÓN BTC (ATR% + expansión + Squeeze + ADX)
+# ANÁLISIS DE PATRÓN BTC
 # ============================================================
 
 def analizar_patron_btc(btc_cache):
@@ -444,11 +444,9 @@ def analizar_patron_btc(btc_cache):
 
     ahora = datetime.now(timezone.utc).timestamp()
 
-    # --- ATR% + NR7 ---
     atr_pct = calcular_atr_percentile(velas, ATR_PERIOD, ATR_VENTANA)
     nr7 = es_nr7(velas, NR7_PERIOD)
 
-    # --- Squeeze Momentum ---
     sqz = calcular_squeeze_momentum(velas, SQZ_BB_LENGTH, SQZ_BB_MULT,
                                     SQZ_KC_LENGTH, SQZ_KC_MULT)
     if sqz is None:
@@ -460,7 +458,6 @@ def analizar_patron_btc(btc_cache):
     mom_val   = sqz["momentum"]
     mom_nombre, mom_emoji, _ = traducir_color_momentum(mom_color)
 
-    # --- ADX ---
     adx_data = calcular_adx(velas, ADX_LENGTH)
     if adx_data is None:
         CONTADOR_FILTROS["SIN_EXPANSION"] += 1
@@ -471,9 +468,6 @@ def analizar_patron_btc(btc_cache):
     di_plus = adx_data["di_plus"]
     di_minus = adx_data["di_minus"]
 
-    # ═══════════════════════════════════════════════════════════
-    # BÚSQUEDA DE EXPANSIÓN
-    # ═══════════════════════════════════════════════════════════
     hay_expansion = False
 
     for k in range(max(0, n - 8), n):
@@ -489,7 +483,6 @@ def analizar_patron_btc(btc_cache):
         fuerza_x = vela_actual / prom_previo
         edad_h = (ahora - velas[k]["timestamp"]) / 3600
 
-        # Filtro EDAD
         if edad_h > COMP_HORAS_RECIENTE:
             CONTADOR_FILTROS["EDAD"] += 1
             print(f"   ⏭️ Expansión rechazada por EDAD ({edad_h:.1f}h)", flush=True)
@@ -498,7 +491,6 @@ def analizar_patron_btc(btc_cache):
         d = "up" if velas[k]["close"] > velas[k]["open"] else "down"
         etiqueta = ""
 
-        # Filtro MOMENTUM
         if d == "up":
             if mom_color == "maroon":
                 etiqueta = "TEMPRANO"
@@ -520,14 +512,12 @@ def analizar_patron_btc(btc_cache):
                       f"({mom_nombre}, {mom_val:+.4f})", flush=True)
                 continue
 
-        # Filtro ADX
         if adx_val < ADX_UMBRAL:
             CONTADOR_FILTROS["ADX"] += 1
             print(f"   ⏭️ Expansión {d.upper()} rechazada por ADX "
                   f"({adx_val:.1f} < {ADX_UMBRAL})", flush=True)
             continue
 
-        # Filtro DI
         if d == "up" and (di_plus is None or di_minus is None or di_plus <= di_minus):
             CONTADOR_FILTROS["DI"] += 1
             print(f"   ⏭️ Expansión UP rechazada por DI", flush=True)
@@ -537,7 +527,6 @@ def analizar_patron_btc(btc_cache):
             print(f"   ⏭️ Expansión DOWN rechazada por DI", flush=True)
             continue
 
-        # PASA
         CONTADOR_FILTROS["PASA"] += 1
         print(f"   ✅ EXPANSIÓN {d.upper()} CONFIRMADA — "
               f"{mom_nombre} [{etiqueta}] | ADX {adx_val:.1f} | "
@@ -572,7 +561,6 @@ def analizar_patron_btc(btc_cache):
     if not hay_expansion:
         CONTADOR_FILTROS["SIN_EXPANSION"] += 1
 
-    # Compresión
     if atr_pct is not None and atr_pct < ATR_UMBRAL_COMPRESION:
         CONTADOR_FILTROS["COMPRESION"] += 1
         nr7_txt = " | NR7 ✅" if nr7 else ""
@@ -1217,7 +1205,6 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         btc_dir_str = alert.get("btc_dir", "flat").upper()
         btc_modo_str = alert.get("btc_modo", "neutro").upper()
 
-        # --- Momentum + ADX BTC ---
         pat = btc_context.get("patron_btc") or {}
         mom_color_interno = (pat.get("momentum_color") or "").lower()
         mom_nombre, mom_emoji, mom_signif = traducir_color_momentum(mom_color_interno)
@@ -1496,6 +1483,7 @@ def main():
             f"⏸️ Solo LONGs → no se analizan monedas\n"
             f"🕐 {ahora_lima_str} (Lima)"
         )
+        print(f"\n🔇 BTC DOWN confirmado — sin envío (solo LONGs)", flush=True)
         now_ts = datetime.now(timezone.utc).timestamp()
         new_state = list(previous_state)
         guardar_estado(new_state)
