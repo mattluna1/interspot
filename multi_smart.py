@@ -1438,12 +1438,6 @@ def main():
                 f"🕐 {ahora_lima_str} (Lima)"
             )
         elif estado_actual == "expandiendo":
-
-        # ═══════════════════════════════════════════════════════════
-        # SOLO se envía Telegram cuando hay expansión CONFIRMADA.
-        # Estados "comprimiendo" y "neutral" quedan en SILENCIO.
-        # ═══════════════════════════════════════════════════════════
-        if estado_actual == "expandiendo":
             direccion = patron_btc.get("direccion", "?")
             emoji_op = "🟢" if direccion == "up" else "🔴"
             op_txt = "LONG" if direccion == "up" else "SHORT"
@@ -1460,45 +1454,6 @@ def main():
                 badge = "🟠 TEMPRANO"
             elif mom_etq == "CONFIRMADO":
                 badge = "🟢 CONFIRMADO"
-            ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
-
-            # Solo notificamos la expansión si es UP (los LONGs son los que operamos)
-            if direccion == "up":
-                emoji_op = "🟢"
-                op_txt = "LONG"
-                precio_actual = patron_btc.get("precio", 0)
-                fuerza = patron_btc.get("fuerza", 0)
-                edad_h = patron_btc.get("edad_h", 0)
-
-                mom_color_interno = (patron_btc.get("momentum_color") or "").lower()
-                mom_nombre, mom_emoji, mom_signif = traducir_color_momentum(mom_color_interno)
-                mom_val = patron_btc.get("momentum")
-                mom_etq = patron_btc.get("momentum_etiqueta", "")
-
-                if mom_etq == "TEMPRANO":
-                    badge = "🟠 TEMPRANO"
-                elif mom_etq == "CONFIRMADO":
-                    badge = "🟢 CONFIRMADO"
-                else:
-                    badge = ""
-
-                mom_val_txt = f"{mom_val:+.4f}" if mom_val is not None else "N/A"
-                adx_val = patron_btc.get("adx")
-                adx_str = f"{adx_val:.1f}" if adx_val is not None else "N/A"
-                atr_pct_txt = patron_btc.get("atr_pct")
-                atr_str = f"{atr_pct_txt:.1f}" if atr_pct_txt is not None else "N/A"
-
-                send_telegram_message(
-                    f"🧠 MULTI SMART\n"
-                    f"🔥 EXPANSIÓN UP — {emoji_op} {op_txt} BTC\n"
-                    f"━━━━━━━━━━━━━━━━━━━\n"
-                    f"📍 Precio: ${precio_actual:,.2f}\n"
-                    f"📊 Fuerza: {fuerza:.1f}x hace {edad_h:.1f}h\n"
-                    f"📈 Momentum: {mom_emoji} {mom_nombre} {mom_val_txt} — {badge}\n"
-                    f"📊 ADX: {adx_str} | ATR%: {atr_str}\n"
-                    f"✅ Analizando monedas...\n"
-                    f"🕐 {ahora_lima_str} (Lima)"
-                )
             else:
                 badge = ""
 
@@ -1519,10 +1474,6 @@ def main():
                 f"✅ Filtro pasa → analizando monedas...\n"
                 f"🕐 {ahora_lima_str} (Lima)"
             )
-                # Expansión DOWN → solo log interno, sin Telegram
-                print(f"   🔇 Expansión DOWN confirmada — sin envío (solo LONGs)", flush=True)
-        else:
-            print(f"   🔇 Estado {estado_actual.upper()} — sin envío (solo expansión UP)", flush=True)
     else:
         print("   🔇 Throttle activo — sin envío", flush=True)
 
@@ -1545,7 +1496,6 @@ def main():
             f"⏸️ Solo LONGs → no se analizan monedas\n"
             f"🕐 {ahora_lima_str} (Lima)"
         )
-        print(f"\n🔇 BTC DOWN confirmado — sin envío (solo LONGs)", flush=True)
         now_ts = datetime.now(timezone.utc).timestamp()
         new_state = list(previous_state)
         guardar_estado(new_state)
