@@ -13,10 +13,9 @@ from pathlib import Path
 import requests
 
 # ============================================================
-# MULTI SMART V3 — Fase 2.3
-#   Base: multi_smart Fase 2.2 (intacto)
-#   Añadido: SHORT + momentum propio por ALT + sistema de salidas
-#   Data separada en data_v3/
+# MULTI SMART — Fase 2.2
+#   Filtro compresión BTC (ATR% + NR7) + Squeeze Momentum + ADX
+#   60 monedas dinámicas + LONG-only + SIN TPs
 # ============================================================
 
 SYMBOLS = [
@@ -38,7 +37,6 @@ MAX_HISTORY_HOURS = 48
 
 SMART_LINE_SCORE_MIN = 6.0
 SMART_DIRECTION_SCORE_MIN_LONG = -20
-SMART_DIRECTION_SCORE_MIN_SHORT = 20
 SMART_TOTAL_SCORE_MIN = 80
 
 # ============================================================
@@ -81,16 +79,9 @@ CONTADOR_FILTROS = {
     "SIN_EXPANSION": 0,
     "COMPRESION": 0,
     "PASA": 0,
-    # Nuevos (por ALT)
-    "ALT_MOMENTUM": 0,
-    "ALT_ADX": 0,
-    "SIN_CACHE_ALT": 0,
 }
 
-# ══════════════════════════════════════════════════════════════
-# NUEVO: Data v3 separada
-# ══════════════════════════════════════════════════════════════
-DATA_DIR = Path("data_v3")
+DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
 STATE_FILE = DATA_DIR / "multi_smart_state.json"
@@ -110,16 +101,9 @@ HORA_FIN = 24
 PD_VENTANA_MIN = 10
 PD_MIN_PCT = 2.0
 
-# ══════════════════════════════════════════════════════════════
-# NUEVO: Dos bases de cache (BTC y Alts en repos distintos)
-# ══════════════════════════════════════════════════════════════
-CACHE_BTC_BASE = (
+CACHE_REMOTE_BASE = (
     "https://raw.githubusercontent.com/mattluna1/"
     "interspot/main/data/cache"
-)
-CACHE_ALTS_BASE = (
-    "https://raw.githubusercontent.com/mattlunaluna2/"
-    "coins/main/data/cache"
 )
 CACHE_MAX_EDAD_MIN = 40
 
@@ -146,16 +130,8 @@ COINGECKO_IDS = {
 }
 
 
-# ══════════════════════════════════════════════════════════════
-# MODIFICADO: leer_cache_remoto decide repo según symbol
-# ══════════════════════════════════════════════════════════════
 def leer_cache_remoto(symbol):
-    if symbol == "BTC":
-        base = CACHE_BTC_BASE
-    else:
-        base = CACHE_ALTS_BASE
-    url = f"{base}/{symbol}.json"
-
+    url = f"{CACHE_REMOTE_BASE}/{symbol}.json"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as r:
@@ -230,6 +206,10 @@ def construir_velas(cache, tf="5m"):
     return velas
 
 
+# ============================================================
+# TRADUCCIÓN DE COLORES
+# ============================================================
+
 def traducir_color_momentum(color_interno):
     mapa = {
         "lime":   ("SUBE FUERTE",   "🟢", "Alcista confirmado"),
@@ -283,7 +263,7 @@ def es_nr7(velas, period=7):
 
 
 # ============================================================
-# SQUEEZE MOMENTUM (LazyBear) — intacto
+# SQUEEZE MOMENTUM (LazyBear) — portado de multi_tf_coinbeaconB
 # ============================================================
 
 def _sma(serie, length):
@@ -381,7 +361,7 @@ def calcular_squeeze_momentum(velas, length=20, mult=2.0,
 
 
 # ============================================================
-# ADX — intacto
+# ADX — portado de multi_tf_coinbeaconB
 # ============================================================
 
 def calcular_adx(velas, length=14):
@@ -445,7 +425,7 @@ def calcular_adx(velas, length=14):
 
 
 # ============================================================
-# ANÁLISIS DE PATRÓN BTC — intacto
+# ANÁLISIS DE PATRÓN BTC (ATR% + expansión + Squeeze + ADX)
 # ============================================================
 
 def analizar_patron_btc(btc_cache):
@@ -464,9 +444,11 @@ def analizar_patron_btc(btc_cache):
 
     ahora = datetime.now(timezone.utc).timestamp()
 
+    # --- ATR% + NR7 ---
     atr_pct = calcular_atr_percentile(velas, ATR_PERIOD, ATR_VENTANA)
     nr7 = es_nr7(velas, NR7_PERIOD)
 
+    # --- Squeeze Momentum ---
     sqz = calcular_squeeze_momentum(velas, SQZ_BB_LENGTH, SQZ_BB_MULT,
                                     SQZ_KC_LENGTH, SQZ_KC_MULT)
     if sqz is None:
@@ -478,6 +460,7 @@ def analizar_patron_btc(btc_cache):
     mom_val   = sqz["momentum"]
     mom_nombre, mom_emoji, _ = traducir_color_momentum(mom_color)
 
+    # --- ADX ---
     adx_data = calcular_adx(velas, ADX_LENGTH)
     if adx_data is None:
         CONTADOR_FILTROS["SIN_EXPANSION"] += 1
@@ -488,6 +471,9 @@ def analizar_patron_btc(btc_cache):
     di_plus = adx_data["di_plus"]
     di_minus = adx_data["di_minus"]
 
+    # ═══════════════════════════════════════════════════════════
+    # BÚSQUEDA DE EXPANSIÓN
+    # ═══════════════════════════════════════════════════════════
     hay_expansion = False
 
     for k in range(max(0, n - 8), n):
@@ -503,6 +489,7 @@ def analizar_patron_btc(btc_cache):
         fuerza_x = vela_actual / prom_previo
         edad_h = (ahora - velas[k]["timestamp"]) / 3600
 
+        # Filtro EDAD
         if edad_h > COMP_HORAS_RECIENTE:
             CONTADOR_FILTROS["EDAD"] += 1
             print(f"   ⏭️ Expansión rechazada por EDAD ({edad_h:.1f}h)", flush=True)
@@ -511,6 +498,7 @@ def analizar_patron_btc(btc_cache):
         d = "up" if velas[k]["close"] > velas[k]["open"] else "down"
         etiqueta = ""
 
+        # Filtro MOMENTUM
         if d == "up":
             if mom_color == "maroon":
                 etiqueta = "TEMPRANO"
@@ -532,12 +520,14 @@ def analizar_patron_btc(btc_cache):
                       f"({mom_nombre}, {mom_val:+.4f})", flush=True)
                 continue
 
+        # Filtro ADX
         if adx_val < ADX_UMBRAL:
             CONTADOR_FILTROS["ADX"] += 1
             print(f"   ⏭️ Expansión {d.upper()} rechazada por ADX "
                   f"({adx_val:.1f} < {ADX_UMBRAL})", flush=True)
             continue
 
+        # Filtro DI
         if d == "up" and (di_plus is None or di_minus is None or di_plus <= di_minus):
             CONTADOR_FILTROS["DI"] += 1
             print(f"   ⏭️ Expansión UP rechazada por DI", flush=True)
@@ -547,6 +537,7 @@ def analizar_patron_btc(btc_cache):
             print(f"   ⏭️ Expansión DOWN rechazada por DI", flush=True)
             continue
 
+        # PASA
         CONTADOR_FILTROS["PASA"] += 1
         print(f"   ✅ EXPANSIÓN {d.upper()} CONFIRMADA — "
               f"{mom_nombre} [{etiqueta}] | ADX {adx_val:.1f} | "
@@ -581,6 +572,7 @@ def analizar_patron_btc(btc_cache):
     if not hay_expansion:
         CONTADOR_FILTROS["SIN_EXPANSION"] += 1
 
+    # Compresión
     if atr_pct is not None and atr_pct < ATR_UMBRAL_COMPRESION:
         CONTADOR_FILTROS["COMPRESION"] += 1
         nr7_txt = " | NR7 ✅" if nr7 else ""
@@ -599,45 +591,7 @@ def analizar_patron_btc(btc_cache):
 
 
 # ============================================================
-# ══════════════════════════════════════════════════════════
-# NUEVO: Análisis de momentum propio de la ALT
-# ══════════════════════════════════════════════════════════
-# ============================================================
-
-def analizar_alt_momentum(symbol):
-    """
-    Lee el cache de la ALT (repo coins) y calcula SU momentum+ADX.
-    Devuelve dict o None si no hay cache.
-    """
-    cache = leer_cache_remoto(symbol)
-    if not cache:
-        return None
-
-    velas = construir_velas(cache, "15m")
-    if len(velas) < 2 * SQZ_KC_LENGTH:
-        return None
-
-    sqz = calcular_squeeze_momentum(velas, SQZ_BB_LENGTH, SQZ_BB_MULT,
-                                    SQZ_KC_LENGTH, SQZ_KC_MULT)
-    if not sqz:
-        return None
-
-    adx_data = calcular_adx(velas, ADX_LENGTH)
-    if not adx_data:
-        return None
-
-    return {
-        "mom_color":    sqz["color"],
-        "mom_val":      sqz["momentum"],
-        "adx":          adx_data["adx"],
-        "di_plus":      adx_data["di_plus"],
-        "di_minus":     adx_data["di_minus"],
-        "precio":       cache.get("price"),
-    }
-
-
-# ============================================================
-# THROTTLE — intacto
+# THROTTLE
 # ============================================================
 
 def cargar_throttle():
@@ -669,7 +623,7 @@ def guardar_throttle(estado):
 
 
 # ============================================================
-# PUMP EVENTS — intacto
+# PUMP EVENTS
 # ============================================================
 
 def consultar_pumping_events():
@@ -730,7 +684,7 @@ def pd_para_symbol(symbol, pd_index):
 
 
 # ============================================================
-# HELPERS — intactos
+# HELPERS
 # ============================================================
 
 def numero(valor):
@@ -985,8 +939,7 @@ def guardar_en_csv(alert_data):
         "btc_momentum", "btc_adx",
         "pd_tipo", "pd_pct", "pd_rvol", "pd_conf",
         "smart_direction", "smart_line_score",
-        "structure_quality", "total_score",
-        "premium", "mom_alt", "adx_alt",  # ══ NUEVO
+        "structure_quality", "total_score"
     ]
     if not CSV_FILE.exists():
         with CSV_FILE.open("w", newline="", encoding="utf-8") as f:
@@ -1062,13 +1015,6 @@ def guardar_estado(estado):
         json.dump(estado, f, indent=2)
 
 
-# ============================================================
-# ══════════════════════════════════════════════════════════
-# MODIFICADO: analizar_confluencia ahora soporta LONG y SHORT
-#              y aplica momentum propio si la ALT tiene cache
-# ══════════════════════════════════════════════════════════
-# ============================================================
-
 def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
                          btc_context, pd_index=None):
     precio = coin_data.get("price")
@@ -1079,45 +1025,8 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
     btc_dir = btc_context.get("btc_dir", "flat")
     btc_modo = btc_context.get("btc_modo", "neutro")
 
-    # ══════════════════════════════════════════════════════════
-    # NUEVO: analizar momentum propio de la ALT
-    # ══════════════════════════════════════════════════════════
-    alt_mom = analizar_alt_momentum(symbol)
-    premium = alt_mom is not None
-
-    if premium:
-        # La ALT tiene cache → SU momentum decide la dirección
-        alt_color = alt_mom["mom_color"]
-        alt_adx = alt_mom["adx"]
-        alt_dp = alt_mom["di_plus"]
-        alt_dm = alt_mom["di_minus"]
-
-        if alt_color in ("lime", "maroon"):
-            operacion_permitida = "LONG"
-            alt_dir = "up"
-        elif alt_color in ("red", "green"):
-            operacion_permitida = "SHORT"
-            alt_dir = "down"
-        else:
-            return []
-
-        # Filtro ADX propio de la ALT
-        if alt_adx < ADX_UMBRAL:
-            CONTADOR_FILTROS["ALT_ADX"] += 1
-            return []
-
-        # Filtro DI alineado con la dirección de la ALT
-        if alt_dir == "up" and (alt_dp is None or alt_dm is None or alt_dp <= alt_dm):
-            return []
-        if alt_dir == "down" and (alt_dp is None or alt_dm is None or alt_dm <= alt_dp):
-            return []
-    else:
-        # Sin cache → comportamiento original
-        CONTADOR_FILTROS["SIN_CACHE_ALT"] += 1
-        if btc_dir != "up":
-            return []
-        operacion_permitida = "LONG"
-        alt_dir = "up"
+    if btc_dir != "up":
+        return []
 
     pd = pd_para_symbol(symbol, pd_index or {})
 
@@ -1143,29 +1052,16 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         status = str(linea.get("status", "")).lower()
         inclinacion = str(linea.get("fallingOrRising", "")).lower()
 
-        # ══════════════════════════════════════════════════════════
-        # Búsqueda de líneas según dirección
-        # ══════════════════════════════════════════════════════════
-        tipo_operacion = None
+        if "broke down" in status or "failed break" in status or "near breakdown" in status:
+            continue
 
-        if operacion_permitida == "LONG":
-            if "broke down" in status or "failed break" in status or "near breakdown" in status:
-                continue
-            if tipo == "resistance" and ("near breakout" in status or "broke up" in status):
-                tipo_operacion = "breakout"
-            elif "retest" in status and "holding" in status:
-                tipo_operacion = "rebote"
-            elif tipo == "support" and inclinacion == "rising" and abs(distancia) <= 1.0:
-                tipo_operacion = "rebote"
-        else:  # SHORT
-            if "broke up" in status or "failed break" in status or "near breakout" in status:
-                continue
-            if tipo == "support" and ("near breakdown" in status or "broke down" in status):
-                tipo_operacion = "breakdown"
-            elif "retest" in status and "rejecting" in status:
-                tipo_operacion = "rechazo"
-            elif tipo == "resistance" and inclinacion == "falling" and abs(distancia) <= 1.0:
-                tipo_operacion = "rechazo"
+        tipo_operacion = None
+        if tipo == "resistance" and ("near breakout" in status or "broke up" in status):
+            tipo_operacion = "breakout"
+        elif "retest" in status and "holding" in status:
+            tipo_operacion = "rebote"
+        elif tipo == "support" and inclinacion == "rising" and abs(distancia) <= 1.0:
+            tipo_operacion = "rebote"
 
         if tipo_operacion is None:
             continue
@@ -1181,17 +1077,10 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         bias_linea = str(linea.get("bias", "")).lower()
         dir_score = linea.get("direction_score") or 0
 
-        if operacion_permitida == "LONG":
-            if bias_linea == "bearish":
-                continue
-            if dir_score < SMART_DIRECTION_SCORE_MIN_LONG:
-                continue
-        else:  # SHORT
-            if bias_linea == "bullish":
-                continue
-            if dir_score > SMART_DIRECTION_SCORE_MIN_SHORT:
-                continue
-
+        if bias_linea == "bearish":
+            continue
+        if dir_score < SMART_DIRECTION_SCORE_MIN_LONG:
+            continue
         if abs(distancia) > 1.0:
             continue
 
@@ -1202,23 +1091,20 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         tf = linea.get("timeframe")
         tendencia = tendencia_1h if tf == "1h" else tendencia_15m
 
-        # PD filter (solo aplica a LONG por ahora)
         if pd["activo"]:
-            if operacion_permitida == "LONG" and pd["direccion"] == "down":
+            if pd["direccion"] == "down":
                 continue
 
-        pd_confirmado = pd["activo"] and pd["direccion"] == "up" and operacion_permitida == "LONG"
+        pd_confirmado = pd["activo"] and pd["direccion"] == "up"
 
         candidates_by_tf.setdefault(tf, []).append({
             "line": linea,
-            "operacion": operacion_permitida,
+            "operacion": "LONG",
             "tipo_operacion": tipo_operacion,
             "score": total_score,
             "tendencia": tendencia,
             "tipo_efectivo": tipo,
             "pd_confirmado": pd_confirmado,
-            "premium": premium,
-            "alt_mom": alt_mom,
         })
 
     final_candidates = []
@@ -1255,7 +1141,7 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             "is_near_breakout": "near breakout" in str(linea.get("status", "")).lower(),
             "is_near_breakdown": "near breakdown" in str(linea.get("status", "")).lower(),
             "is_retest": "retest" in str(linea.get("status", "")).lower(),
-            "bias": cand.get("operacion", "LONG"),
+            "bias": "LONG",
             "tipo_efectivo": cand.get("tipo_efectivo"),
             "rsi1h": rsi_data.get("1h", {}).get("rsi14") if rsi_data else None,
             "rsi15m": rsi_data.get("15m", {}).get("rsi14") if rsi_data else None,
@@ -1271,134 +1157,13 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             "smart_bias": linea.get("bias"),
             "smart_line_score": linea.get("line_score"),
             "entry_price": linea.get("price"),
-            "premium": cand.get("premium", False),
-            "alt_mom": cand.get("alt_mom"),
         })
     return alerts
 
 
-# ============================================================
-# ══════════════════════════════════════════════════════════
-# NUEVO: Sistema de salidas
-# ══════════════════════════════════════════════════════════
-# ============================================================
-
-def revisar_salidas(previous_state, hora_lima):
-    """
-    Revisa posiciones abiertas y avisa si el momentum de la ALT se agota.
-    - LONG: LIME → GREEN (agotamiento) o pasa a RED (cierre urgente)
-    - SHORT: RED → GREEN (agotamiento) o pasa a LIME (cierre urgente)
-    """
-    avisos = 0
-    nuevo_state = []
-
-    for item in previous_state:
-        if item.get("cerrada"):
-            nuevo_state.append(item)
-            continue
-
-        symbol = item.get("symbol")
-        operacion = item.get("operacion")
-        entry = item.get("entry_price") or 0
-        mom_al_entrar = item.get("mom_al_entrar")
-
-        if not mom_al_entrar or not operacion:
-            # Posición vieja sin metadatos → no revisar
-            nuevo_state.append(item)
-            continue
-
-        alt_data = analizar_alt_momentum(symbol)
-        if not alt_data:
-            nuevo_state.append(item)
-            continue
-
-        mom_actual = alt_data["mom_color"]
-        mom_nombre, mom_emoji, _ = traducir_color_momentum(mom_actual)
-        precio_actual = alt_data["precio"] or entry
-        ganancia_pct = ((precio_actual - entry) / entry * 100) if entry > 0 else 0
-
-        aviso_agot = item.get("aviso_agotamiento", False)
-        aviso_cierre = item.get("aviso_cierre", False)
-
-        # ══ LONG: LIME → GREEN ══
-        if (operacion == "LONG"
-                and mom_al_entrar == "lime"
-                and mom_actual == "green"
-                and not aviso_agot):
-            msg = (
-                f"⚠️ AGOTAMIENTO — {symbol} LONG\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 ${precio_actual:.6f} ({ganancia_pct:+.2f}%)\n"
-                f"🎯 Momentum: {mom_emoji} {mom_nombre}\n"
-                f"💡 Considera cerrar o subir stop\n"
-                f"🕐 {hora_lima}"
-            )
-            if send_telegram_message(msg):
-                avisos += 1
-                item["aviso_agotamiento"] = True
-
-        # ══ LONG: pasa a RED ══
-        if (operacion == "LONG"
-                and mom_actual == "red"
-                and not aviso_cierre):
-            msg = (
-                f"🔴 CIERRE URGENTE — {symbol} LONG\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 ${precio_actual:.6f} ({ganancia_pct:+.2f}%)\n"
-                f"🎯 Momentum: {mom_emoji} {mom_nombre}\n"
-                f"🚨 Cerrar posición\n"
-                f"🕐 {hora_lima}"
-            )
-            if send_telegram_message(msg):
-                avisos += 1
-                item["aviso_cierre"] = True
-
-        # ══ SHORT: RED → GREEN ══
-        if (operacion == "SHORT"
-                and mom_al_entrar == "red"
-                and mom_actual == "green"
-                and not aviso_agot):
-            msg = (
-                f"⚠️ AGOTAMIENTO — {symbol} SHORT\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 ${precio_actual:.6f}\n"
-                f"🎯 Momentum: {mom_emoji} {mom_nombre}\n"
-                f"💡 Considera cerrar\n"
-                f"🕐 {hora_lima}"
-            )
-            if send_telegram_message(msg):
-                avisos += 1
-                item["aviso_agotamiento"] = True
-
-        # ══ SHORT: pasa a LIME ══
-        if (operacion == "SHORT"
-                and mom_actual == "lime"
-                and not aviso_cierre):
-            msg = (
-                f"🔴 CIERRE URGENTE — {symbol} SHORT\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 ${precio_actual:.6f}\n"
-                f"🎯 Momentum: {mom_emoji} {mom_nombre}\n"
-                f"🚨 Cerrar posición\n"
-                f"🕐 {hora_lima}"
-            )
-            if send_telegram_message(msg):
-                avisos += 1
-                item["aviso_cierre"] = True
-
-        nuevo_state.append(item)
-
-    return nuevo_state, avisos
-
-
-# ============================================================
-# MODIFICADO: procesar_alertas soporta LONG + SHORT
-# ============================================================
-
 def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
     sent_count = 0
     long_count = 0
-    short_count = 0
     new_state = list(filtered_previous)
     now_ts = datetime.now(timezone.utc).timestamp()
     now_lima = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M:%S")
@@ -1407,9 +1172,6 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         symbol = alert["symbol"]
         line = alert["line"]
         vol = alert["volume"]
-        operacion = alert.get("bias", "LONG")
-        premium = alert.get("premium", False)
-        alt_mom = alert.get("alt_mom")
 
         nivel_nuevo = line.get("currentLevel") or 0
         duplicado = False
@@ -1430,10 +1192,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         if duplicado:
             continue
 
-        if operacion == "LONG":
-            long_count += 1
-        else:
-            short_count += 1
+        long_count += 1
 
         tipo_linea = (line.get("type") or "?").upper()
         tipo_efectivo = (alert.get("tipo_efectivo") or line.get("type") or "").upper()
@@ -1458,7 +1217,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         btc_dir_str = alert.get("btc_dir", "flat").upper()
         btc_modo_str = alert.get("btc_modo", "neutro").upper()
 
-        # --- Momentum + ADX BTC (contexto) ---
+        # --- Momentum + ADX BTC ---
         pat = btc_context.get("patron_btc") or {}
         mom_color_interno = (pat.get("momentum_color") or "").lower()
         mom_nombre, mom_emoji, mom_signif = traducir_color_momentum(mom_color_interno)
@@ -1484,17 +1243,6 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         btc_atr_str = f"{btc_atr:.1f}" if isinstance(btc_atr, (int, float)) else "N/A"
         mom_linea += f"📉 BTC ATR%: {btc_atr_str}\n"
 
-        # ══ NUEVO: línea de ALT premium ══
-        filtros_txt = ""
-        mom_alt_str = ""
-        adx_alt_str = ""
-        if premium and alt_mom:
-            alt_color = alt_mom["mom_color"]
-            alt_nombre, alt_emoji, _ = traducir_color_momentum(alt_color)
-            filtros_txt = "✅ Filtros OK (Mom + ADX + ATR)"
-            mom_alt_str = f"{alt_color}"
-            adx_alt_str = f"{alt_mom['adx']:.1f}"
-
         pd_tipo = alert.get("pd_tipo")
         pd_pct = alert.get("pd_pct", 0.0)
         pd_rvol = alert.get("pd_rvol", 0.0)
@@ -1517,13 +1265,9 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         smart_line_score_str = f"{smart_line_score:.1f}" if smart_line_score is not None else "N/A"
         smart_linea = f"🧠 Smart: {smart_conf_str} | Dir {smart_dir_str} | Bias {str(smart_bias).upper()} | Score {smart_line_score_str}"
 
-        emoji_op = "🟢" if operacion == "LONG" else "🔴"
-        aviso_premium = "" if premium else "⚠️"
-
-        # Mensaje (mantengo estructura original + filtros premium)
         msg = (
-            f"🧠 MULTI SMART V3\n"
-            f"{aviso_premium}{emoji_op} {operacion} {symbol} [{tipo_op_txt}]\n"
+            f"🧠 MULTI SMART\n"
+            f"🟢 LONG {symbol} [{tipo_op_txt}]\n"
             f"📈 ${precio_actual:.6f}\n"
             f"📉 {tipo_linea}{flip_text} ({inclinacion})\n"
             f"   • TF: {line.get('timeframe', '')}\n"
@@ -1534,20 +1278,17 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
             f"📈 RSI 1h={rsi1h_str} | 15m={rsi15m_str}\n"
             f"{pd_linea}\n"
             f"{smart_linea}\n"
+            f"🕐 {now_lima}"
         )
-        if filtros_txt:
-            msg += f"{filtros_txt}\n"
-        msg += f"🕐 {now_lima}"
         if tag_text:
             msg += f"\n{tag_text}"
 
         if send_telegram_message(msg):
             sent_count += 1
-            print(f"   {emoji_op} {operacion} {symbol} [{tipo_op_txt}]"
-                  f"{' [PREMIUM]' if premium else ''} → enviado", flush=True)
+            print(f"   🟢 LONG {symbol} [{tipo_op_txt}] → enviado", flush=True)
 
             guardar_en_csv({
-                "hora_lima": now_lima, "symbol": symbol, "bias": operacion,
+                "hora_lima": now_lima, "symbol": symbol, "bias": "LONG",
                 "type": line.get("type", ""), "timeframe": line.get("timeframe", ""),
                 "currentLevel": str(nivel_linea),
                 "touchCount": str(line.get("touchCount", 0)),
@@ -1571,25 +1312,16 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
                 "smart_line_score": smart_line_score_str,
                 "structure_quality": alert['structure_quality'],
                 "total_score": f"{alert['score']:.1f}",
-                "premium": "1" if premium else "0",
-                "mom_alt": mom_alt_str,
-                "adx_alt": adx_alt_str,
             })
 
-            # ══ NUEVO: guardar con metadata para sistema de salidas ══
             new_state.append({
                 "symbol": symbol, "type": line.get("type"),
                 "timeframe": line.get("timeframe"),
                 "currentLevel": nivel_linea, "detected_at": now_ts,
                 "entry_price": precio_actual,
-                "operacion": operacion,
-                "mom_al_entrar": alt_mom["mom_color"] if alt_mom else None,
-                "premium": premium,
-                "aviso_agotamiento": False,
-                "aviso_cierre": False,
             })
 
-    return sent_count, long_count, short_count, new_state
+    return sent_count, long_count, new_state
 
 
 def analizar_moneda(symbol, volume_by_symbol, btc_context, hora_lima, pd_index=None):
@@ -1656,22 +1388,11 @@ def main():
     CONTADOR_FILTROS = {k: 0 for k in CONTADOR_FILTROS}
 
     print("\n" + "=" * 70, flush=True)
-    print("🚀 MULTI SMART V3 — Fase 2.3 (base 2.2 + SHORT + momentum ALT + salidas)", flush=True)
+    print("🚀 MULTI SMART — Fase 2.2 (ATR% + NR7 + Squeeze + ADX)", flush=True)
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
 
     previous_state = cargar_estado()
-
-    # ══════════════════════════════════════════════════════════
-    # NUEVO: Revisar posiciones abiertas PRIMERO
-    # ══════════════════════════════════════════════════════════
-    print("\n🛡️ Revisando posiciones abiertas...", flush=True)
-    hora_lima_rev = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M:%S")
-    previous_state, avisos_salida = revisar_salidas(previous_state, hora_lima_rev)
-    if avisos_salida > 0:
-        print(f"   ✅ {avisos_salida} aviso(s) de salida enviados", flush=True)
-    else:
-        print(f"   🔇 Sin avisos de salida", flush=True)
 
     print("\n🔍 FILTRO BTC (compresión → expansión + momentum + ADX)...", flush=True)
     btc_cache_full = leer_cache_remoto(BTC_SYMBOL)
@@ -1701,11 +1422,47 @@ def main():
 
     if debe_avisar:
         guardar_throttle(estado_actual)
+        ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
 
+        if estado_actual == "comprimiendo":
+            atr_pct_txt = patron_btc.get("atr_pct")
+            nr7_val = patron_btc.get("nr7", False)
+            atr_str = f"ATR%: {atr_pct_txt:.1f}" if atr_pct_txt is not None else "ATR%: N/A"
+            nr7_str = " | NR7 ✅" if nr7_val else ""
+            send_telegram_message(
+                f"🧠 MULTI SMART\n"
+                f"🌀 COMPRESIÓN BTC DETECTADA\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"   {atr_str}{nr7_str}\n"
+                f"⏳ Esperando ruptura (UP o DOWN)\n"
+                f"🕐 {ahora_lima_str} (Lima)"
+            )
+        elif estado_actual == "expandiendo":
+
+        # ═══════════════════════════════════════════════════════════
+        # SOLO se envía Telegram cuando hay expansión CONFIRMADA.
+        # Estados "comprimiendo" y "neutral" quedan en SILENCIO.
+        # ═══════════════════════════════════════════════════════════
         if estado_actual == "expandiendo":
             direccion = patron_btc.get("direccion", "?")
+            emoji_op = "🟢" if direccion == "up" else "🔴"
+            op_txt = "LONG" if direccion == "up" else "SHORT"
+            precio_actual = patron_btc.get("precio", 0)
+            fuerza = patron_btc.get("fuerza", 0)
+            edad_h = patron_btc.get("edad_h", 0)
+
+            mom_color_interno = (patron_btc.get("momentum_color") or "").lower()
+            mom_nombre, mom_emoji, mom_signif = traducir_color_momentum(mom_color_interno)
+            mom_val = patron_btc.get("momentum")
+            mom_etq = patron_btc.get("momentum_etiqueta", "")
+
+            if mom_etq == "TEMPRANO":
+                badge = "🟠 TEMPRANO"
+            elif mom_etq == "CONFIRMADO":
+                badge = "🟢 CONFIRMADO"
             ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
 
+            # Solo notificamos la expansión si es UP (los LONGs son los que operamos)
             if direccion == "up":
                 emoji_op = "🟢"
                 op_txt = "LONG"
@@ -1732,7 +1489,7 @@ def main():
                 atr_str = f"{atr_pct_txt:.1f}" if atr_pct_txt is not None else "N/A"
 
                 send_telegram_message(
-                    f"🧠 MULTI SMART V3\n"
+                    f"🧠 MULTI SMART\n"
                     f"🔥 EXPANSIÓN UP — {emoji_op} {op_txt} BTC\n"
                     f"━━━━━━━━━━━━━━━━━━━\n"
                     f"📍 Precio: ${precio_actual:,.2f}\n"
@@ -1743,32 +1500,59 @@ def main():
                     f"🕐 {ahora_lima_str} (Lima)"
                 )
             else:
-                print(f"   🔇 Expansión DOWN confirmada — sin envío (solo analiza alts si UP)", flush=True)
+                badge = ""
+
+            mom_val_txt = f"{mom_val:+.4f}" if mom_val is not None else "N/A"
+            adx_val = patron_btc.get("adx")
+            adx_str = f"{adx_val:.1f}" if adx_val is not None else "N/A"
+            atr_pct_txt = patron_btc.get("atr_pct")
+            atr_str = f"{atr_pct_txt:.1f}" if atr_pct_txt is not None else "N/A"
+
+            send_telegram_message(
+                f"🧠 MULTI SMART\n"
+                f"🔥 EXPANSIÓN {direccion.upper()} — {emoji_op} {op_txt} BTC\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"📍 Precio: ${precio_actual:,.2f}\n"
+                f"📊 Fuerza: {fuerza:.1f}x hace {edad_h:.1f}h\n"
+                f"📈 Momentum: {mom_emoji} {mom_nombre} {mom_val_txt} — {badge}\n"
+                f"📊 ADX: {adx_str} | ATR%: {atr_str}\n"
+                f"✅ Filtro pasa → analizando monedas...\n"
+                f"🕐 {ahora_lima_str} (Lima)"
+            )
+                # Expansión DOWN → solo log interno, sin Telegram
+                print(f"   🔇 Expansión DOWN confirmada — sin envío (solo LONGs)", flush=True)
         else:
-            print(f"   🔇 Estado {estado_actual.upper()} — sin envío", flush=True)
+            print(f"   🔇 Estado {estado_actual.upper()} — sin envío (solo expansión UP)", flush=True)
     else:
         print("   🔇 Throttle activo — sin envío", flush=True)
 
     if COMP_MODO_FILTRO == "hard" and not patron_btc["pasa"]:
-        print(f"\n⏸️ Filtro BTC no pasó ({estado_actual.upper()}) — abortando en silencio", flush=True)
+        print(f"\n⏸️ Filtro no pasó ({estado_actual.upper()}) — abortando en silencio", flush=True)
         imprimir_resumen_diagnostico()
         now_ts = datetime.now(timezone.utc).timestamp()
         new_state = list(previous_state)
         guardar_estado(new_state)
+        return
+
+    if estado_actual == "expandiendo" and patron_btc.get("direccion") == "down":
+        print(f"\n⚠️ BTC DOWN → aviso informativo", flush=True)
+        ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
+        send_telegram_message(
+            f"🧠 MULTI SMART\n"
+            f"📉 BTC DOWN DETECTADO\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"   {patron_btc['detalle']}\n"
+            f"⏸️ Solo LONGs → no se analizan monedas\n"
+            f"🕐 {ahora_lima_str} (Lima)"
+        )
+        print(f"\n🔇 BTC DOWN confirmado — sin envío (solo LONGs)", flush=True)
+        now_ts = datetime.now(timezone.utc).timestamp()
+        new_state = list(previous_state)
+        guardar_estado(new_state)
+        imprimir_resumen_diagnostico()
         return
 
     print(f"\n✅ Filtro pasa → analizando monedas", flush=True)
-
-    # ══ IMPORTANTE: el bot sigue analizando alts SOLO si BTC está UP ══
-    # (Las alts pueden tener su propio momentum UP/SHORT, pero el contexto macro
-    #  lo da BTC. Si BTC está DOWN, el bot no analiza.)
-    if estado_actual == "expandiendo" and patron_btc.get("direccion") == "down":
-        print(f"\n🔇 BTC DOWN confirmado — sin envío (el bot opera LONG/SHORT sobre alts solo si BTC UP)", flush=True)
-        now_ts = datetime.now(timezone.utc).timestamp()
-        new_state = list(previous_state)
-        guardar_estado(new_state)
-        imprimir_resumen_diagnostico()
-        return
 
     btc_context = {
         "btc_dir": "up",
@@ -1805,7 +1589,7 @@ def main():
 
     all_alerts.sort(key=lambda x: -x["score"])
 
-    sent_count, long_count, short_count, new_state = procesar_alertas(
+    sent_count, long_count, new_state = procesar_alertas(
         all_alerts, filtered_previous, btc_context, pd_index
     )
 
@@ -1816,8 +1600,7 @@ def main():
     print("\n" + "=" * 70, flush=True)
     print("📢 RESULTADO FINAL", flush=True)
     print("=" * 70, flush=True)
-    print(f"Alertas: {sent_count} | LONG: {long_count} | SHORT: {short_count}", flush=True)
-    print(f"Avisos salida: {avisos_salida}", flush=True)
+    print(f"Alertas LONG: {sent_count}", flush=True)
     print(f"Monedas analizadas: {len(monedas_a_analizar)}", flush=True)
     print("\n🏁 PROGRAMA TERMINADO", flush=True)
 
