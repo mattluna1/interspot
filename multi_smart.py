@@ -102,14 +102,16 @@ PD_VENTANA_MIN = 10
 PD_MIN_PCT = 2.0
 
 CACHE_REMOTE_BASE = (
-    "https://raw.githubusercontent.com/mattlunaluna2/"
-    "coins/main/data/cache"
+    "https://raw.githubusercontent.com/mattluna1/"
+    "interspot/main/data/cache"
 )
 CACHE_MAX_EDAD_MIN = 40
+
 
 def hora_permite_envio():
     now_lima = datetime.now(timezone.utc) + LIMA_OFFSET
     return HORA_INICIO <= now_lima.hour < HORA_FIN
+
 
 COINBEACON_TRENDLINES_URL = "https://api.coinbeacon.io/detectors/trendlines"
 COINBEACON_VOLUME_URL = "https://api.coinbeacon.io/detectors/volume"
@@ -126,6 +128,7 @@ COINGECKO_IDS = {
     "HYPE": "hyperliquid", "ZEC": "zcash", "DOGE": "dogecoin",
     "STX": "blockstack", "DASH": "dash",
 }
+
 
 def leer_cache_remoto(symbol):
     url = f"{CACHE_REMOTE_BASE}/{symbol}.json"
@@ -171,8 +174,10 @@ def leer_cache_remoto(symbol):
         "velas_1h": data.get("velas_1h", []),
     }
 
+
 def _media(xs):
     return sum(xs) / len(xs) if xs else 0.0
+
 
 def construir_velas(cache, tf="5m"):
     if not cache:
@@ -200,6 +205,7 @@ def construir_velas(cache, tf="5m"):
         })
     return velas
 
+
 # ============================================================
 # TRADUCCIÓN DE COLORES
 # ============================================================
@@ -212,6 +218,7 @@ def traducir_color_momentum(color_interno):
         "maroon": ("GIRA AL ALZA",  "🟠", "Reversión alcista temprana"),
     }
     return mapa.get(color_interno, ("DESCONOCIDO", "⚪", "Sin señal"))
+
 
 # ============================================================
 # ATR PERCENTIL + NR7
@@ -247,11 +254,13 @@ def calcular_atr_percentile(velas, period=14, ventana=100):
     menores = sum(1 for x in historico if x <= actual)
     return round((menores / len(historico)) * 100, 2)
 
+
 def es_nr7(velas, period=7):
     if len(velas) < period:
         return False
     rangos = [v["rango"] for v in velas[-period:]]
     return rangos[-1] == min(rangos)
+
 
 # ============================================================
 # SQUEEZE MOMENTUM (LazyBear) — portado de multi_tf_coinbeaconB
@@ -262,12 +271,14 @@ def _sma(serie, length):
         return None
     return sum(serie[-length:]) / length
 
+
 def _stdev(serie, length):
     if len(serie) < length:
         return None
     ventana = serie[-length:]
     m = sum(ventana) / length
     return (sum((x - m) ** 2 for x in ventana) / length) ** 0.5
+
 
 def _linreg_value(y):
     n = len(y)
@@ -281,6 +292,7 @@ def _linreg_value(y):
         return y[-1]
     slope = num / den
     return y_mean + slope * ((n - 1) - x_mean)
+
 
 def calcular_squeeze_momentum(velas, length=20, mult=2.0,
                               lengthKC=20, multKC=1.5):
@@ -347,6 +359,7 @@ def calcular_squeeze_momentum(velas, length=20, mult=2.0,
         "color":         color,
     }
 
+
 # ============================================================
 # ADX — portado de multi_tf_coinbeaconB
 # ============================================================
@@ -409,6 +422,7 @@ def calcular_adx(velas, length=14):
         "di_plus": di_plus_list[-1] if di_plus_list else None,
         "di_minus": di_minus_list[-1] if di_minus_list else None,
     }
+
 
 # ============================================================
 # ANÁLISIS DE PATRÓN BTC (ATR% + expansión + Squeeze + ADX)
@@ -575,6 +589,7 @@ def analizar_patron_btc(btc_cache):
     return {"pasa": False, "estado": "neutral",
             "detalle": f"rango normal (ATR% {atr_pct if atr_pct is not None else 'N/A'})"}
 
+
 # ============================================================
 # THROTTLE
 # ============================================================
@@ -594,6 +609,7 @@ def cargar_throttle():
     except Exception:
         return {"ok": False, "estado": None, "ts": 0}
 
+
 def guardar_throttle(estado):
     try:
         with THROTTLE_FILE.open("w", encoding="utf-8") as f:
@@ -604,6 +620,7 @@ def guardar_throttle(estado):
             }, f, indent=2)
     except Exception as e:
         print(f"⚠️ No se pudo guardar throttle: {e}", flush=True)
+
 
 # ============================================================
 # PUMP EVENTS
@@ -626,6 +643,7 @@ def consultar_pumping_events():
         print(f"   ⚠️ pump: {str(e)[:80]}", flush=True)
         return []
 
+
 def indexar_pumping_events(eventos):
     index = {}
     for ev in eventos:
@@ -638,6 +656,7 @@ def indexar_pumping_events(eventos):
         if actual is None or spotted_at > actual.get("spottedAt", 0):
             index[symbol_base][tipo] = ev
     return index
+
 
 def pd_para_symbol(symbol, pd_index):
     resultado = {"activo": False, "tipo": None, "direccion": None,
@@ -663,6 +682,7 @@ def pd_para_symbol(symbol, pd_index):
         resultado["activo"] = True
     return resultado
 
+
 # ============================================================
 # HELPERS
 # ============================================================
@@ -675,10 +695,12 @@ def numero(valor):
     except (ValueError, TypeError):
         return None
 
+
 def distancia_porcentual(precio, nivel):
     if precio is None or nivel is None or precio == 0:
         return None
     return ((nivel - precio) / precio) * 100
+
 
 def consultar_coinbeacon(endpoint, timeframe, limit, symbol=None):
     token = os.environ.get("COINBEACON_TOKEN")
@@ -692,6 +714,7 @@ def consultar_coinbeacon(endpoint, timeframe, limit, symbol=None):
     with urllib.request.urlopen(request, timeout=30) as response:
         raw = response.read().decode("utf-8")
     return json.loads(raw)
+
 
 def consultar_coinbeacon_trendlines(symbol, timeframe):
     pair = symbol + "USDT"
@@ -721,6 +744,7 @@ def consultar_coinbeacon_trendlines(symbol, timeframe):
             "timeframe": timeframe,
         })
     return lineas
+
 
 def obtener_monedas_recomendadas(timeframe="15m", limit=MAX_MONEDAS_DINAMICAS):
     try:
@@ -753,6 +777,7 @@ def obtener_monedas_recomendadas(timeframe="15m", limit=MAX_MONEDAS_DINAMICAS):
     print(f"📡 CoinBeacon recomienda {len(monedas)} monedas", flush=True)
     return monedas[:limit]
 
+
 def consultar_volume_coinbeacon():
     result = consultar_coinbeacon(COINBEACON_VOLUME_URL, "4h", 500)
     items = result.get("items", [])
@@ -767,6 +792,7 @@ def consultar_volume_coinbeacon():
         "spottedAt": item.get("spottedAt"),
     } for item in items]
 
+
 def clasificar_estructura(touches):
     if touches >= 11: return "VERY_STRONG"
     if touches >= 8: return "STRONG"
@@ -774,11 +800,13 @@ def clasificar_estructura(touches):
     if touches >= 4: return "WEAK"
     return "IGNORE"
 
+
 def obtener_touch_score(touches):
     if touches < 4: return 0
     tabla = {4:8, 5:12, 6:16, 7:20, 8:25, 9:28, 10:31}
     if touches >= 11: return 35 + min((touches - 11) * 2, 15)
     return tabla.get(touches, 0)
+
 
 def obtener_proximidad_score(distance_pct, timeframe):
     if distance_pct is None or distance_pct <= 0:
@@ -788,8 +816,10 @@ def obtener_proximidad_score(distance_pct, timeframe):
         return 0
     return 35 - ((distance_pct / max_dist) * 30)
 
+
 def obtener_timeframe_score(timeframe):
     return {"1h": 19, "15m": 15}.get(timeframe, 0)
+
 
 def obtener_status_score(status):
     s = str(status).lower()
@@ -801,6 +831,7 @@ def obtener_status_score(status):
     if "confirmed" in s: score += 10
     return score
 
+
 def obtener_confidence_score(confidence):
     if confidence is None:
         return 0
@@ -810,11 +841,13 @@ def obtener_confidence_score(confidence):
     normalized = max(0, min(100, normalized))
     return (normalized / 100) * 20
 
+
 def obtener_smart_score(line):
     smart = line.get("line_score") or 0
     if smart:
         return min((smart / 200) * 15, 15)
     return 0
+
 
 def calcular_score_linea(linea):
     touches = linea.get("touchCount", 0)
@@ -839,6 +872,7 @@ def calcular_score_linea(linea):
         "smart_score": smart_score, "bonus_score": bonus,
         "total_score": total_score,
     }
+
 
 def analizar_coinbeacon(symbol):
     print(f"\n📈 COINBEACON — {symbol}", flush=True)
@@ -873,6 +907,7 @@ def analizar_coinbeacon(symbol):
 
     return {"price": precio, "lines": todas}
 
+
 def send_telegram_message(message):
     if not hora_permite_envio():
         return False
@@ -893,6 +928,7 @@ def send_telegram_message(message):
         print(f"Error Telegram: {e}", flush=True)
         return False
 
+
 def guardar_en_csv(alert_data):
     fieldnames = [
         "hora_lima", "symbol", "bias", "type", "timeframe",
@@ -910,6 +946,7 @@ def guardar_en_csv(alert_data):
             csv.DictWriter(f, fieldnames=fieldnames).writeheader()
     with CSV_FILE.open("a", newline="", encoding="utf-8") as f:
         csv.DictWriter(f, fieldnames=fieldnames).writerow(alert_data)
+
 
 def guardar_historico_linea(symbol, linea, rsi_data, hora_lima, tipo_efectivo=None):
     fieldnames = [
@@ -944,6 +981,7 @@ def guardar_historico_linea(symbol, linea, rsi_data, hora_lima, tipo_efectivo=No
     with HISTORICO_CSV_FILE.open("a", newline="", encoding="utf-8") as f:
         csv.DictWriter(f, fieldnames=fieldnames).writerow(row)
 
+
 def cargar_estado():
     if not STATE_FILE.exists():
         return []
@@ -955,6 +993,7 @@ def cargar_estado():
     except Exception:
         pass
     return []
+
 
 def limpiar_estado(previous_state, now_ts):
     resultado = []
@@ -970,9 +1009,11 @@ def limpiar_estado(previous_state, now_ts):
             continue
     return resultado
 
+
 def guardar_estado(estado):
     with STATE_FILE.open("w", encoding="utf-8") as f:
         json.dump(estado, f, indent=2)
+
 
 def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
                          btc_context, pd_index=None):
@@ -1118,6 +1159,7 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             "entry_price": linea.get("price"),
         })
     return alerts
+
 
 def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
     sent_count = 0
@@ -1281,6 +1323,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
 
     return sent_count, long_count, new_state
 
+
 def analizar_moneda(symbol, volume_by_symbol, btc_context, hora_lima, pd_index=None):
     coin_data = analizar_coinbeacon(symbol)
     rsi_data = analizar_rsi_de_cache(symbol)
@@ -1299,6 +1342,7 @@ def analizar_moneda(symbol, volume_by_symbol, btc_context, hora_lima, pd_index=N
                                    btc_context, pd_index)
     return alerts, coin_data, rsi_data
 
+
 def analizar_rsi_de_cache(symbol):
     cache = leer_cache_remoto(symbol)
     if not cache:
@@ -1311,6 +1355,7 @@ def analizar_rsi_de_cache(symbol):
         datos["1h"] = {"price": cache.get("price"), "rsi14": cache["rsi1h"],
                        "tendencia": cache.get("dir1h", "?")}
     return datos
+
 
 # ============================================================
 # RESUMEN DIAGNÓSTICO
@@ -1336,6 +1381,7 @@ def imprimir_resumen_diagnostico():
 
     print("-" * 70, flush=True)
     print(f"   TOTAL evaluaciones: {total}", flush=True)
+
 
 def main():
     global CONTADOR_FILTROS
@@ -1376,54 +1422,58 @@ def main():
 
     if debe_avisar:
         guardar_throttle(estado_actual)
+        ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
 
-        # ═══════════════════════════════════════════════════════════
-        # SOLO se envía Telegram cuando hay expansión UP CONFIRMADA.
-        # Estados "comprimiendo", "neutral" y expansión DOWN → SILENCIO.
-        # ═══════════════════════════════════════════════════════════
-        if estado_actual == "expandiendo":
+        if estado_actual == "comprimiendo":
+            atr_pct_txt = patron_btc.get("atr_pct")
+            nr7_val = patron_btc.get("nr7", False)
+            atr_str = f"ATR%: {atr_pct_txt:.1f}" if atr_pct_txt is not None else "ATR%: N/A"
+            nr7_str = " | NR7 ✅" if nr7_val else ""
+            send_telegram_message(
+                f"🧠 MULTI SMART\n"
+                f"🌀 COMPRESIÓN BTC DETECTADA\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"   {atr_str}{nr7_str}\n"
+                f"⏳ Esperando ruptura (UP o DOWN)\n"
+                f"🕐 {ahora_lima_str} (Lima)"
+            )
+        elif estado_actual == "expandiendo":
             direccion = patron_btc.get("direccion", "?")
-            ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
+            emoji_op = "🟢" if direccion == "up" else "🔴"
+            op_txt = "LONG" if direccion == "up" else "SHORT"
+            precio_actual = patron_btc.get("precio", 0)
+            fuerza = patron_btc.get("fuerza", 0)
+            edad_h = patron_btc.get("edad_h", 0)
 
-            if direccion == "up":
-                precio_actual = patron_btc.get("precio", 0)
-                fuerza = patron_btc.get("fuerza", 0)
-                edad_h = patron_btc.get("edad_h", 0)
+            mom_color_interno = (patron_btc.get("momentum_color") or "").lower()
+            mom_nombre, mom_emoji, mom_signif = traducir_color_momentum(mom_color_interno)
+            mom_val = patron_btc.get("momentum")
+            mom_etq = patron_btc.get("momentum_etiqueta", "")
 
-                mom_color_interno = (patron_btc.get("momentum_color") or "").lower()
-                mom_nombre, mom_emoji, mom_signif = traducir_color_momentum(mom_color_interno)
-                mom_val = patron_btc.get("momentum")
-                mom_etq = patron_btc.get("momentum_etiqueta", "")
-
-                if mom_etq == "TEMPRANO":
-                    badge = "🟠 TEMPRANO"
-                elif mom_etq == "CONFIRMADO":
-                    badge = "🟢 CONFIRMADO"
-                else:
-                    badge = ""
-
-                mom_val_txt = f"{mom_val:+.4f}" if mom_val is not None else "N/A"
-                adx_val = patron_btc.get("adx")
-                adx_str = f"{adx_val:.1f}" if adx_val is not None else "N/A"
-                atr_pct_txt = patron_btc.get("atr_pct")
-                atr_str = f"{atr_pct_txt:.1f}" if atr_pct_txt is not None else "N/A"
-
-                send_telegram_message(
-                    f"🧠 MULTI SMART\n"
-                    f"🔥 EXPANSIÓN UP — 🟢 LONG BTC\n"
-                    f"━━━━━━━━━━━━━━━━━━━\n"
-                    f"📍 Precio: ${precio_actual:,.2f}\n"
-                    f"📊 Fuerza: {fuerza:.1f}x hace {edad_h:.1f}h\n"
-                    f"📈 Momentum: {mom_emoji} {mom_nombre} {mom_val_txt} — {badge}\n"
-                    f"📊 ADX: {adx_str} | ATR%: {atr_str}\n"
-                    f"✅ Analizando monedas...\n"
-                    f"🕐 {ahora_lima_str} (Lima)"
-                )
+            if mom_etq == "TEMPRANO":
+                badge = "🟠 TEMPRANO"
+            elif mom_etq == "CONFIRMADO":
+                badge = "🟢 CONFIRMADO"
             else:
-                # Expansión DOWN → solo log interno, sin Telegram
-                print(f"   🔇 Expansión DOWN confirmada — sin envío (solo LONGs)", flush=True)
-        else:
-            print(f"   🔇 Estado {estado_actual.upper()} — sin envío (solo expansión UP)", flush=True)
+                badge = ""
+
+            mom_val_txt = f"{mom_val:+.4f}" if mom_val is not None else "N/A"
+            adx_val = patron_btc.get("adx")
+            adx_str = f"{adx_val:.1f}" if adx_val is not None else "N/A"
+            atr_pct_txt = patron_btc.get("atr_pct")
+            atr_str = f"{atr_pct_txt:.1f}" if atr_pct_txt is not None else "N/A"
+
+            send_telegram_message(
+                f"🧠 MULTI SMART\n"
+                f"🔥 EXPANSIÓN {direccion.upper()} — {emoji_op} {op_txt} BTC\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"📍 Precio: ${precio_actual:,.2f}\n"
+                f"📊 Fuerza: {fuerza:.1f}x hace {edad_h:.1f}h\n"
+                f"📈 Momentum: {mom_emoji} {mom_nombre} {mom_val_txt} — {badge}\n"
+                f"📊 ADX: {adx_str} | ATR%: {atr_str}\n"
+                f"✅ Filtro pasa → analizando monedas...\n"
+                f"🕐 {ahora_lima_str} (Lima)"
+            )
     else:
         print("   🔇 Throttle activo — sin envío", flush=True)
 
@@ -1436,7 +1486,16 @@ def main():
         return
 
     if estado_actual == "expandiendo" and patron_btc.get("direccion") == "down":
-        print(f"\n🔇 BTC DOWN confirmado — sin envío (solo LONGs)", flush=True)
+        print(f"\n⚠️ BTC DOWN → aviso informativo", flush=True)
+        ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
+        send_telegram_message(
+            f"🧠 MULTI SMART\n"
+            f"📉 BTC DOWN DETECTADO\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"   {patron_btc['detalle']}\n"
+            f"⏸️ Solo LONGs → no se analizan monedas\n"
+            f"🕐 {ahora_lima_str} (Lima)"
+        )
         now_ts = datetime.now(timezone.utc).timestamp()
         new_state = list(previous_state)
         guardar_estado(new_state)
@@ -1494,6 +1553,7 @@ def main():
     print(f"Alertas LONG: {sent_count}", flush=True)
     print(f"Monedas analizadas: {len(monedas_a_analizar)}", flush=True)
     print("\n🏁 PROGRAMA TERMINADO", flush=True)
+
 
 if __name__ == "__main__":
     try:
