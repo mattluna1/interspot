@@ -1,75 +1,60 @@
-name: Recolector BTC
-
-on:
-  schedule:
-    - cron: '*/5 * * * *'
-  workflow_dispatch:
+name: RECOLECTOR BTC interspot
 
 permissions:
   contents: write
 
-# ═══════════════════════════════════════════════════════════════
-# GRUPO ÚNICO — no compartir con Multi Smart
-# ═══════════════════════════════════════════════════════════════
+on:
+  schedule:
+    - cron: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *'
+  workflow_dispatch:
+
 concurrency:
-  group: recolector-btc      # ← ÚNICO, no "multi-smart"
-  cancel-in-progress: true
+  group: interspot-push
+  cancel-in-progress: false
 
 jobs:
-  run-recolector:
+  monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: 🐍 Setup Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
-      - name: 🚀 Run Recolector
+      - name: Check syntax
         run: |
-          echo "========================================"
-          echo "📦 INICIO RECOLECTOR"
-          date -u
-          echo "========================================"
+          python -m py_compile recolector_btc.py
+          echo "✅ Sintaxis OK"
 
-          python -u recolector_btc.py
+      - name: Run RECOLECTOR BTC
+        run: python recolector_btc.py
 
-          echo "========================================"
-          echo "🏁 FIN RECOLECTOR"
-          date -u
-          echo "========================================"
-
-      - name: 💾 Save cache
+      - name: Commit cache
         if: always()
-        timeout-minutes: 3
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add data/ 2>/dev/null || true
-
-          if git diff --cached --quiet; then
-            echo "📭 Sin cambios"
-            exit 0
+          if [ -d data/cache ]; then
+            git add data/cache/
           fi
 
-          git commit -m "data: recolector $(date -u +%Y-%m-%dT%H:%M) [skip ci]"
-
-          for i in 1 2 3; do
-            echo "🔄 Push intento $i..."
-            if git pull --rebase origin main && git push origin HEAD:main; then
-              echo "✅ Push OK"
-              exit 0
-            fi
-            echo "⚠️ Push falló, esperando..."
-            sleep 10
-          done
-
-          echo "❌ Push fallido"
-          exit 1
+          if git diff --staged --quiet; then
+            echo "📭 Sin cambios."
+          else
+            git commit -m "Recolector BTC [skip ci] $(date -u +'%Y-%m-%d %H:%M UTC')"
+            for i in 1 2 3; do
+              git pull --rebase origin main && break
+              sleep 5
+            done
+            for i in 1 2 3; do
+              git push && echo "✅ Push OK" && break
+              git pull --rebase origin main || true
+              sleep 10
+            done
+          fi
