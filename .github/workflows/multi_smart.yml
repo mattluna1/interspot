@@ -1,51 +1,47 @@
-name: Multi Smart Bot
-
-on:
-  workflow_dispatch:
+name: MULTI SMART
 
 permissions:
   contents: write
 
-# ═══════════════════════════════════════════════════════════════
-# IMPORTANTE: group único para no chocar con otros workflows
-# del mismo repo (RECOLECTOR, etc.)
-# ═══════════════════════════════════════════════════════════════
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
 concurrency:
-  group: multi-smart-bot
-  cancel-in-progress: true
+  group: multi-smart-interspot
+  cancel-in-progress: false
 
 jobs:
-  run-bot:
-    name: 🤖 Multi Smart Bot
+  monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
 
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: 🐍 Setup Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
-      - name: 📦 Install dependencies
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install requests
 
-      - name: ✅ Verify Python
+      - name: Check syntax
         run: |
-          python --version
           python -m py_compile multi_smart.py
-          echo "✅ Python OK"
+          echo "✅ Sintaxis OK"
 
-      - name: 🚀 Run Multi Smart
+      - name: Run MULTI SMART
         env:
+          COINBEACON_TOKEN: ${{ secrets.COINBEACON_TOKEN_SMART }}
           COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
-          COINBEACON_TOKEN: ${{ secrets.COINBEACON_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
@@ -61,33 +57,36 @@ jobs:
           date -u
           echo "========================================"
 
-      - name: 💾 Save state
+      - name: Commit data
         if: always()
-        timeout-minutes: 3
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add data/ 2>/dev/null || true
+          git add \
+            data/multi_smart.csv \
+            data/multi_smart_state.json \
+            data/multi_smart_historial_lineas.csv \
+            data/multi_smart_tps.csv \
+            data/multi_smart_throttle.json \
+            2>/dev/null || true
 
           if git diff --cached --quiet; then
-            echo "📭 No hay cambios para guardar."
+            echo "📭 Sin cambios."
             exit 0
           fi
 
-          git commit -m "data: multi_smart state [skip ci]"
+          git commit -m "Multi Smart [skip ci]"
 
           for i in 1 2 3; do
-            echo "🔄 Push intento $i..."
+            git pull --rebase origin main && \
+            git push origin HEAD:main && \
+            echo "✅ Push OK" && \
+            exit 0
 
-            if git pull --rebase origin main && git push origin HEAD:main; then
-              echo "✅ Push OK"
-              exit 0
-            fi
-
-            echo "⚠️ Push falló, esperando..."
+            echo "⚠️ Intento $i falló, reintentando..."
             sleep 10
           done
 
-          echo "❌ No se pudo hacer push después de 3 intentos."
+          echo "❌ No se pudo hacer push"
           exit 1
