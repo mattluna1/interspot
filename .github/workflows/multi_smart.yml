@@ -1,8 +1,8 @@
 name: Multi Smart
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
+  # schedule:
+  #   - cron: '*/5 * * * *'   # DESACTIVADO: lo dispara cron-job.org
   workflow_dispatch:
 
 permissions:
@@ -10,11 +10,12 @@ permissions:
 
 concurrency:
   group: multi-smart
-  cancel-in-progress: false
+  cancel-in-progress: true    # ← Cancela runs viejos si llega uno nuevo
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 5        # ← Mata runs colgados a los 5 min
 
     steps:
       - name: Checkout repository
@@ -59,6 +60,7 @@ jobs:
 
       - name: Save state
         if: always()
+        timeout-minutes: 3      # ← También le pongo timeout
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
