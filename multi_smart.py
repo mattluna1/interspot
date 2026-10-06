@@ -13,10 +13,11 @@ from pathlib import Path
 import requests
 
 # ============================================================
-# MULTI SMART — Fase 3
-#   Filtro BTC (ATR% + NR7 + Squeeze + ADX) + Alts premium
-#   Alts premium: expansión 5m + Squeeze + ADX + DI (sin ATR%)
-#   LONG-only + SIN TPs
+# MULTI SMART — Fase 2.2 + Premium Bonus + Filtros Optimizados
+#   Filtro compresión BTC (ATR% + NR7) + Squeeze Momentum + ADX
+#   60 monedas dinámicas + LONG-only + SIN TPs
+#   BONUS: filtro premium por alt (velas 5m) → tag informativo
+#   FILTROS OPTIMIZADOS: análisis de 4,256 líneas históricas
 # ============================================================
 
 SYMBOLS = [
@@ -36,9 +37,15 @@ TIMEFRAMES = ["15m", "1h"]
 
 MAX_HISTORY_HOURS = 48
 
-SMART_LINE_SCORE_MIN = 6.0
+# ═══════════════════════════════════════════════════════════
+# FILTROS DE LÍNEA OPTIMIZADOS — análisis 4,256 líneas
+# ═══════════════════════════════════════════════════════════
+SMART_LINE_SCORE_MIN = 6.0                            # conf mínima
 SMART_DIRECTION_SCORE_MIN_LONG = -20
 SMART_TOTAL_SCORE_MIN = 80
+
+STRUCTURE_QUALITY_ACEPTADAS = {"STRONG", "VERY_STRONG"}  # excluye VALID
+STATUS_EXCLUIDOS = {"broken", "failed"}                  # excluye estos
 
 # ============================================================
 # FILTRO BTC — ATR percentil + NR7 + EXPANSIÓN
@@ -80,8 +87,10 @@ CONTADOR_FILTROS = {
     "SIN_EXPANSION": 0,
     "COMPRESION": 0,
     "PASA": 0,
-    "ALT_PREMIUM_RECHAZADA": 0,
     "ALT_PREMIUM_PASA": 0,
+    "ALT_NO_PREMIUM": 0,
+    "LINEA_RECHAZADA_CALIDAD": 0,
+    "LINEA_RECHAZADA_STATUS": 0,
 }
 
 DATA_DIR = Path("data")
@@ -428,7 +437,7 @@ def calcular_adx(velas, length=14):
 
 
 # ============================================================
-# ANÁLISIS DE PATRÓN BTC (con ATR% + NR7 + Squeeze + ADX)
+# ANÁLISIS DE PATRÓN BTC (ATR% + expansión + Squeeze + ADX)
 # ============================================================
 
 def analizar_patron_btc(btc_cache):
@@ -582,14 +591,10 @@ def analizar_patron_btc(btc_cache):
 
 
 # ============================================================
-# ANÁLISIS DE PATRÓN ALT (Fase 3) — mismo filtro que BTC,
-# aplicado a las velas 5m de cada alt premium.
-# SIN ATR% (por decisión de diseño).
+# ANÁLISIS DE PATRÓN ALT (Bonus Premium) — velas 5m, sin ATR%
 # ============================================================
 
 def analizar_patron_alt(symbol, alt_cache):
-    global CONTADOR_FILTROS
-
     if not alt_cache:
         return {"pasa": False, "detalle": "sin cache"}
 
@@ -601,7 +606,6 @@ def analizar_patron_alt(symbol, alt_cache):
 
     ahora = datetime.now(timezone.utc).timestamp()
 
-    # --- Squeeze Momentum ---
     sqz = calcular_squeeze_momentum(velas, SQZ_BB_LENGTH, SQZ_BB_MULT,
                                     SQZ_KC_LENGTH, SQZ_KC_MULT)
     if sqz is None:
@@ -611,7 +615,6 @@ def analizar_patron_alt(symbol, alt_cache):
     mom_val   = sqz["momentum"]
     mom_nombre, mom_emoji, _ = traducir_color_momentum(mom_color)
 
-    # --- ADX ---
     adx_data = calcular_adx(velas, ADX_LENGTH)
     if adx_data is None:
         return {"pasa": False, "detalle": "faltan velas para ADX"}
@@ -620,7 +623,6 @@ def analizar_patron_alt(symbol, alt_cache):
     di_plus = adx_data["di_plus"]
     di_minus = adx_data["di_minus"]
 
-    # --- Buscar expansión en las últimas 8 velas ---
     for k in range(max(0, n - 8), n):
         vela_actual = velas[k]["rango"]
         anteriores = [velas[i]["rango"] for i in range(max(0, k-6), k)]
@@ -633,17 +635,13 @@ def analizar_patron_alt(symbol, alt_cache):
         fuerza_x = vela_actual / prom_previo
         edad_h = (ahora - velas[k]["timestamp"]) / 3600
 
-        # Filtro EDAD
         if edad_h > COMP_HORAS_RECIENTE:
             continue
 
         d = "up" if velas[k]["close"] > velas[k]["open"] else "down"
-
-        # Solo LONG
         if d != "up":
             continue
 
-        # Filtro MOMENTUM
         etiqueta = ""
         if mom_color == "maroon":
             etiqueta = "TEMPRANO"
@@ -653,16 +651,13 @@ def analizar_patron_alt(symbol, alt_cache):
             return {"pasa": False,
                     "detalle": f"momento {mom_nombre} (no lime/maroon)"}
 
-        # Filtro ADX
         if adx_val < ADX_UMBRAL:
             return {"pasa": False, "detalle": f"ADX {adx_val:.1f} < {ADX_UMBRAL}"}
 
-        # Filtro DI
         if di_plus is None or di_minus is None or di_plus <= di_minus:
             return {"pasa": False,
                     "detalle": f"DI+ {di_plus} <= DI- {di_minus}"}
 
-        # ✅ PASA TODO
         return {
             "pasa": True,
             "direccion": d,
@@ -1034,7 +1029,8 @@ def guardar_en_csv(alert_data):
         "btc_momentum", "btc_adx",
         "pd_tipo", "pd_pct", "pd_rvol", "pd_conf",
         "smart_direction", "smart_line_score",
-        "structure_quality", "total_score"
+        "structure_quality", "total_score",
+        "premium",
     ]
     if not CSV_FILE.exists():
         with CSV_FILE.open("w", newline="", encoding="utf-8") as f:
@@ -1112,6 +1108,8 @@ def guardar_estado(estado):
 
 def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
                          btc_context, pd_index=None):
+    global CONTADOR_FILTROS
+
     precio = coin_data.get("price")
     lineas = coin_data.get("lines", [])
     if precio is None:
@@ -1147,7 +1145,29 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
         status = str(linea.get("status", "")).lower()
         inclinacion = str(linea.get("fallingOrRising", "")).lower()
 
+        # ═══════════════════════════════════════════════════════
+        # FILTROS DE LÍNEA OPTIMIZADOS (4,256 líneas)
+        # ═══════════════════════════════════════════════════════
+
+        # 1. Status excluidos (broken, failed)
+        if status in STATUS_EXCLUIDOS:
+            CONTADOR_FILTROS["LINEA_RECHAZADA_STATUS"] += 1
+            continue
+
+        # 2. Status rotos por texto
         if "broke down" in status or "failed break" in status or "near breakdown" in status:
+            CONTADOR_FILTROS["LINEA_RECHAZADA_STATUS"] += 1
+            continue
+
+        # 3. Structure quality (solo STRONG o VERY_STRONG)
+        quality = linea.get("structure_quality", "IGNORE")
+        if quality not in STRUCTURE_QUALITY_ACEPTADAS:
+            CONTADOR_FILTROS["LINEA_RECHAZADA_CALIDAD"] += 1
+            continue
+
+        # 4. Confidence mínimo
+        confidence = linea.get("confidence") or 0
+        if confidence < SMART_LINE_SCORE_MIN:
             continue
 
         tipo_operacion = None
@@ -1159,14 +1179,6 @@ def analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
             tipo_operacion = "rebote"
 
         if tipo_operacion is None:
-            continue
-
-        quality = linea.get("structure_quality", "IGNORE")
-        if quality in ("IGNORE", "WEAK"):
-            continue
-
-        confidence = linea.get("confidence") or 0
-        if confidence < SMART_LINE_SCORE_MIN:
             continue
 
         bias_linea = str(linea.get("bias", "")).lower()
@@ -1304,6 +1316,11 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         if alert.get("is_retest"): tags.append("🔄 RETEST")
         if alert.get("is_spike"): tags.append("🚀 VOL SPIKE")
         if alert.get("pd_confirmado"): tags.append("🔥 PD CONFIRMADO")
+
+        premium = alert.get("premium")
+        if premium:
+            tags.append("🔥 PREMIUM CONFIRMADA")
+
         tag_text = " ".join(tags) if tags else ""
 
         rsi1h_str = f"{alert.get('rsi1h'):.2f}" if alert.get('rsi1h') is not None else "N/A"
@@ -1337,6 +1354,14 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
         btc_atr_str = f"{btc_atr:.1f}" if isinstance(btc_atr, (int, float)) else "N/A"
         mom_linea += f"📉 BTC ATR%: {btc_atr_str}\n"
 
+        premium_linea = ""
+        if premium:
+            premium_linea = (
+                f"🔥 ALT Premium: ADX {premium['adx']:.1f} | "
+                f"DI+ {premium['di_plus']:.1f} > DI- {premium['di_minus']:.1f} | "
+                f"Mom {premium['momentum_nombre']} [{premium['momentum_etiqueta']}]\n"
+            )
+
         pd_tipo = alert.get("pd_tipo")
         pd_pct = alert.get("pd_pct", 0.0)
         pd_rvol = alert.get("pd_rvol", 0.0)
@@ -1368,6 +1393,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
             f"   • Nivel: ${nivel_linea:.6f}\n"
             f"   • Toques: {line.get('touchCount', 0)} ({alert['structure_quality']})\n"
             f"🎯 Score: {alert['score']:.1f}\n"
+            f"{premium_linea}"
             f"{mom_linea}"
             f"📈 RSI 1h={rsi1h_str} | 15m={rsi15m_str}\n"
             f"{pd_linea}\n"
@@ -1406,6 +1432,7 @@ def procesar_alertas(alerts, filtered_previous, btc_context, pd_index):
                 "smart_line_score": smart_line_score_str,
                 "structure_quality": alert['structure_quality'],
                 "total_score": f"{alert['score']:.1f}",
+                "premium": "1" if premium else "0",
             })
 
             new_state.append({
@@ -1424,24 +1451,17 @@ def analizar_moneda(symbol, volume_by_symbol, btc_context, hora_lima, pd_index=N
     coin_data = analizar_coinbeacon(symbol)
     rsi_data = analizar_rsi_de_cache(symbol)
 
-    # ═══════════════════════════════════════════════════════════
-    # FASE 3 — Filtro premium por alt (velas 5m, sin ATR%)
-    # Solo se aplica si la moneda tiene velas 5m en el cache
-    # (es decir, si está en la lista del recolector de coins)
-    # ═══════════════════════════════════════════════════════════
+    premium_info = None
     alt_cache = leer_cache_remoto(symbol)
     if alt_cache and alt_cache.get("velas_5m"):
         patron_alt = analizar_patron_alt(symbol, alt_cache)
-        if not patron_alt["pasa"]:
-            CONTADOR_FILTROS["ALT_PREMIUM_RECHAZADA"] += 1
-            print(f"   ⏭️ {symbol} rechazada por filtro premium: "
-                  f"{patron_alt['detalle']}", flush=True)
-            return [], coin_data, rsi_data
-        CONTADOR_FILTROS["ALT_PREMIUM_PASA"] += 1
-        print(f"   ✅ {symbol} PASA filtro premium: {patron_alt['detalle']}",
-              flush=True)
-        # Guardamos el análisis premium para agregarlo a la alerta
-        coin_data["premium"] = patron_alt
+        if patron_alt["pasa"]:
+            premium_info = patron_alt
+            CONTADOR_FILTROS["ALT_PREMIUM_PASA"] += 1
+            print(f"   🔥 {symbol} PREMIUM — {patron_alt['detalle']}", flush=True)
+        else:
+            CONTADOR_FILTROS["ALT_NO_PREMIUM"] += 1
+            print(f"   ⚪ {symbol} no premium — {patron_alt['detalle']}", flush=True)
 
     for linea in coin_data.get("lines", []):
         tipo = linea.get("type")
@@ -1456,10 +1476,9 @@ def analizar_moneda(symbol, volume_by_symbol, btc_context, hora_lima, pd_index=N
     alerts = analizar_confluencia(symbol, coin_data, rsi_data, volume_by_symbol,
                                    btc_context, pd_index)
 
-    # Enriquecer alertas con info del filtro premium
-    if coin_data.get("premium"):
+    if premium_info:
         for a in alerts:
-            a["premium"] = coin_data["premium"]
+            a["premium"] = premium_info
 
     return alerts, coin_data, rsi_data
 
@@ -1498,7 +1517,7 @@ def imprimir_resumen_diagnostico():
             continue
         pct = (count / total) * 100
         barra = "█" * int(pct / 3)
-        print(f"   {nombre:22s} {count:3d}  ({pct:5.1f}%)  {barra}", flush=True)
+        print(f"   {nombre:26s} {count:3d}  ({pct:5.1f}%)  {barra}", flush=True)
 
     print("-" * 70, flush=True)
     print(f"   TOTAL evaluaciones: {total}", flush=True)
@@ -1509,7 +1528,8 @@ def main():
     CONTADOR_FILTROS = {k: 0 for k in CONTADOR_FILTROS}
 
     print("\n" + "=" * 70, flush=True)
-    print("🚀 MULTI SMART — Fase 3 (BTC + Alts premium 5m)", flush=True)
+    print("🚀 MULTI SMART — Fase 2.2 (ATR% + NR7 + Squeeze + ADX)", flush=True)
+    print("   + BONUS Premium + Filtros Optimizados", flush=True)
     print("=" * 70, flush=True)
     print(f"\nHora UTC: {datetime.now(timezone.utc).isoformat()}", flush=True)
 
@@ -1544,10 +1564,6 @@ def main():
     if debe_avisar:
         guardar_throttle(estado_actual)
 
-        # ═══════════════════════════════════════════════════════════
-        # SOLO se envía Telegram cuando hay expansión UP CONFIRMADA.
-        # Estados "comprimiendo", "neutral" y expansión DOWN → SILENCIO.
-        # ═══════════════════════════════════════════════════════════
         if estado_actual == "expandiendo":
             direccion = patron_btc.get("direccion", "?")
             ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
@@ -1602,6 +1618,16 @@ def main():
         return
 
     if estado_actual == "expandiendo" and patron_btc.get("direccion") == "down":
+        print(f"\n⚠️ BTC DOWN → aviso informativo", flush=True)
+        ahora_lima_str = (datetime.now(timezone.utc) + LIMA_OFFSET).strftime("%Y-%m-%d %H:%M")
+        send_telegram_message(
+            f"🧠 MULTI SMART\n"
+            f"📉 BTC DOWN DETECTADO\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"   {patron_btc['detalle']}\n"
+            f"⏸️ Solo LONGs → no se analizan monedas\n"
+            f"🕐 {ahora_lima_str} (Lima)"
+        )
         print(f"\n🔇 BTC DOWN confirmado — sin envío (solo LONGs)", flush=True)
         now_ts = datetime.now(timezone.utc).timestamp()
         new_state = list(previous_state)
@@ -1609,7 +1635,7 @@ def main():
         imprimir_resumen_diagnostico()
         return
 
-    print(f"\n✅ Filtro BTC pasa → analizando monedas", flush=True)
+    print(f"\n✅ Filtro pasa → analizando monedas", flush=True)
 
     btc_context = {
         "btc_dir": "up",
