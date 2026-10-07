@@ -4,8 +4,8 @@ permissions:
   contents: write
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
+  # schedule:
+  #   - cron: '*/5 * * * *'    # ← desactivado, usa cron-job.org
   workflow_dispatch:
 
 concurrency:
@@ -20,13 +20,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
@@ -63,13 +62,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add \
-            data/multi_smart.csv \
-            data/multi_smart_state.json \
-            data/multi_smart_historial_lineas.csv \
-            data/multi_smart_tps.csv \
-            data/multi_smart_throttle.json \
-            2>/dev/null || true
+          git add data/ 2>/dev/null || true
 
           if git diff --cached --quiet; then
             echo "📭 Sin cambios."
@@ -79,14 +72,21 @@ jobs:
           git commit -m "Multi Smart [skip ci]"
 
           for i in 1 2 3; do
-            git pull --rebase origin main && \
-            git push origin HEAD:main && \
-            echo "✅ Push OK" && \
-            exit 0
+            git pull --rebase origin main || {
+              echo "⚠️ Pull falló en intento $i"
+              git rebase --abort 2>/dev/null || true
+              sleep 10
+              continue
+            }
 
-            echo "⚠️ Intento $i falló, reintentando..."
+            if git push origin HEAD:main; then
+              echo "✅ Push OK"
+              exit 0
+            fi
+
+            echo "⚠️ Push falló en intento $i, reintentando..."
             sleep 10
           done
 
-          echo "❌ No se pudo hacer push"
+          echo "❌ No se pudo hacer push tras 3 intentos"
           exit 1
