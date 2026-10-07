@@ -1,0 +1,42 @@
+name: ALERTA ARRANQUE
+
+permissions:
+  contents: write
+
+on:
+  schedule:
+    # Asia Open: 00:00-04:00 UTC → minutos 0-59 de cada hora en esa ventana
+    - cron: '*/10 0-4 * * *'
+    # US Afternoon: 18:00-21:00 UTC
+    - cron: '*/10 18-21 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: alerta-arranque-interspot
+  cancel-in-progress: false
+
+jobs:
+  alerta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pandas requests
+
+      - name: Run Alerta
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -u alerta_arranque.py
