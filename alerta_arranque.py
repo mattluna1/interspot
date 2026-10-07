@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALERTA ARRANQUE — MODO AUTO-DISCOVERY
-Detecta CUALQUIER moneda que arranque en ventanas calientes.
+ALERTA ARRANQUE — AUTO-DISCOVERY 24/7
+Detecta CUALQUIER moneda que arranque en cualquier horario.
 Consume CSV de los 3 colectores vía raw URLs.
 """
 
@@ -40,28 +40,18 @@ CSV_URLS = {
 
 EXCLUIR = {
     # Stablecoins
-    "USDT","USDC","DAI","TUSD","FDUSD","BUSD","USDD","USDE",
-    "PYUSD","USDS","USD1","RLUSD","USD0","USDSUI","USDON",
-    "USDAI","AUSD","USDG","USDGO","USX","EURC","USDF","GHO",
-    "FRAX","LUSD","SUSD","USDR","USDY","USTC","MIM","CRVUSD",
+    "USDT", "USDC", "DAI", "TUSD", "FDUSD", "BUSD", "USDD", "USDE",
+    "PYUSD", "USDS", "USD1", "RLUSD", "USD0", "USDSUI", "USDON",
+    "USDAI", "AUSD", "USDG", "USDGO", "USX", "EURC", "USDF", "GHO",
+    "FRAX", "LUSD", "SUSD", "USDR", "USDY", "USTC", "MIM", "CRVUSD",
     # Gold / commodities
-    "PAXG","XAUT",
+    "PAXG", "XAUT",
     # Wrapped / staked
-    "WBTC","WETH","STETH","WSTETH","RETH","CBETH","WBETH",
-    "WBNB","WMATIC","WAVAX","WSOL",
+    "WBTC", "WETH", "STETH", "WSTETH", "RETH", "CBETH", "WBETH",
+    "WBNB", "WMATIC", "WAVAX", "WSOL",
     # Exchange internal
-    "HTX","BUSD",
+    "HTX", "BUSD",
 }
-
-
-# ============================================================
-# VENTANAS CALIENTES (UTC)
-# ============================================================
-
-VENTANAS = [
-    ("Asia Open",      0,  4),
-    ("US Afternoon",  18, 21),
-]
 
 
 # ============================================================
@@ -69,11 +59,10 @@ VENTANAS = [
 # ============================================================
 
 UMBRAL_CAMBIO_MIN = 1.5     # % mínimo desde hace 1h
-UMBRAL_VOL_RATIO  = 1.4     # Volumen vs promedio 20
+UMBRAL_VOL_RATIO  = 1.4     # Volumen vs promedio 20 snapshots
 UMBRAL_VOL_ABS    = 500_000 # $ mínimo (evitar basura)
 
-# Anti-spam: no repetir la misma alerta en X minutos
-COOLDOWN_MIN = 30
+MAX_ALERTAS_POR_RUN = 10    # límite anti-spam por corrida
 
 
 # ============================================================
@@ -97,7 +86,7 @@ def enviar_telegram(msg):
 
 
 # ============================================================
-# CARGA
+# CARGA DE DATOS
 # ============================================================
 
 def cargar_datos():
@@ -129,19 +118,7 @@ def cargar_datos():
 
 
 # ============================================================
-# VENTANA
-# ============================================================
-
-def en_ventana_caliente():
-    ahora_utc = datetime.now(timezone.utc)
-    for nombre, ini, fin in VENTANAS:
-        if ini <= ahora_utc.hour < fin:
-            return nombre
-    return None
-
-
-# ============================================================
-# DETECCIÓN
+# DETECCIÓN DE ARRANQUE
 # ============================================================
 
 def detectar_arranque(df, symbol):
@@ -187,27 +164,22 @@ def detectar_arranque(df, symbol):
 
 
 # ============================================================
-# MAIN
+# MAIN — CORRE SIEMPRE, SIN FILTRO DE VENTANA
 # ============================================================
 
 def main():
     ahora_utc = datetime.now(timezone.utc)
+    ahora_lima = ahora_utc - timedelta(hours=5)
+
     print(f"\n{'='*70}")
-    print(f"⚡ ALERTA ARRANQUE — AUTO-DISCOVERY")
-    print(f"   {ahora_utc.isoformat()}")
+    print(f"⚡ ALERTA ARRANQUE — AUTO-DISCOVERY 24/7")
+    print(f"   UTC:  {ahora_utc.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"   Lima: {ahora_lima.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*70}")
-
-    ventana = en_ventana_caliente()
-    if not ventana:
-        print("🔇 Fuera de ventana caliente — sin alertas")
-        return
-
-    print(f"🔥 Ventana: {ventana}")
 
     df = cargar_datos()
     print(f"📊 Total: {len(df):,} filas | {df['symbol'].nunique()} monedas")
 
-    # Auto-discovery: escanear TODAS las monedas
     todas = df["symbol"].unique()
     print(f"🔍 Escaneando {len(todas)} monedas...")
 
@@ -222,17 +194,17 @@ def main():
         if r:
             alertas.append(r)
 
-    print(f"   Excluidas: {excluidas} (stables/wrapped)")
-    print(f"   Alertas: {len(alertas)}")
+    print(f"   Excluidas: {excluidas}")
+    print(f"   Alertas:   {len(alertas)}")
 
     if not alertas:
         print("✅ Ninguna alerta activa")
         return
 
-    # Ordenar por magnitud de arranque
+    # Ordenar por magnitud
     alertas.sort(key=lambda x: -x["cambio"])
 
-    for a in alertas[:10]:  # máximo 10 alertas por corrida
+    for a in alertas[:MAX_ALERTAS_POR_RUN]:
         hora_lima = (a["ts"] - timedelta(hours=5)).strftime("%H:%M")
         msg = (
             f"⚡ ARRANQUE DETECTADO\n"
@@ -241,11 +213,10 @@ def main():
             f"💰 ${a['precio']:.6f}\n"
             f"📊 Vol: {a['vol_ratio']:.2f}x (${a['vol_m']:.1f}M)\n"
             f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
-            f"🔥 Ventana: {ventana}\n"
             f"🕐 {hora_lima} Lima"
         )
         if enviar_telegram(msg):
-            print(f"   ✅ Alerta: {a['symbol']} (+{a['cambio']:.2f}%)")
+            print(f"   ✅ {a['symbol']} (+{a['cambio']:.2f}%)")
 
 
 if __name__ == "__main__":
