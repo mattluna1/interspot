@@ -4,8 +4,6 @@ permissions:
   contents: write
 
 on:
-  # schedule:
-  #   - cron: '*/5 * * * *'    # ← desactivado, usa cron-job.org
   workflow_dispatch:
 
 concurrency:
@@ -30,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests
+          pip install -r requirements.txt
 
       - name: Check syntax
         run: |
