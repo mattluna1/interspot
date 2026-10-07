@@ -3,7 +3,6 @@
 """
 DASHBOARD EN VIVO — Corre en GitHub Actions
 Descarga CSV de los 3 recolectores y muestra el estado actual.
-Envía resumen a Telegram opcionalmente.
 """
 
 import os
@@ -52,6 +51,8 @@ UMBRAL_VOL_RATIO    = 1.4
 UMBRAL_VOL_ABS      = 500_000
 
 MARGEN_CASI = 0.7
+MIN_SNAPSHOTS = 40
+MAX_EDAD_ULTIMO_MIN = 60   # descarta si último snapshot >60 min
 
 ENVIAR_TELEGRAM = os.getenv("DASHBOARD_TELEGRAM", "0") == "1"
 
@@ -136,8 +137,13 @@ def cargar_datos():
     for c in ["price", "volume_24h", "percent_change_24h", "cmc_rank", "market_cap"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
+
     df = df.dropna(subset=["timestamp", "price", "symbol"])
     df = df[df["price"] > 0]
+
+    # ✅ FIX 1: dedup por timestamp + symbol (keep=last prioriza datos más recientes)
+    df = df.drop_duplicates(subset=["timestamp", "symbol"], keep="last")
+
     df = df.sort_values(["symbol", "timestamp"]).reset_index(drop=True)
     return df, estados
 
@@ -148,9 +154,15 @@ def cargar_datos():
 
 def evaluar_moneda(df, symbol):
     g = df[df["symbol"] == symbol].sort_values("timestamp")
-    if len(g) < 60:
+    if len(g) < MIN_SNAPSHOTS:
         return None
+
     ts_max = g["timestamp"].max()
+
+    # ✅ FIX 2: descartar si el último snapshot es muy viejo
+    if edad_min(ts_max) > MAX_EDAD_ULTIMO_MIN:
+        return None
+
     mc = g.iloc[-1].get("market_cap", 0) or 0
     rank = g.iloc[-1].get("cmc_rank", 9999)
     precio = g.iloc[-1]["price"]
@@ -166,7 +178,7 @@ def evaluar_moneda(df, symbol):
 
     corte_4h = ts_max - timedelta(hours=4)
     rec_4h = g[g["timestamp"] >= corte_4h]
-    if len(rec_4h) < 10:
+    if len(rec_4h) < 6:
         return None
     p_ini_4h = rec_4h.iloc[0]["price"]
     cambio_4h = ((precio - p_ini_4h) / p_ini_4h) * 100 if p_ini_4h > 0 else 0
