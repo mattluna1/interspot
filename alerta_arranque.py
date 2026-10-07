@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALERTA ARRANQUE EN TIEMPO REAL
-Consume los CSV de los repositorios colectores vía raw URLs.
-Corre cada 10 min desde GitHub Actions en ventanas calientes.
+ALERTA ARRANQUE — MODO AUTO-DISCOVERY
+Detecta CUALQUIER moneda que arranque en ventanas calientes.
+Consume CSV de los 3 colectores vía raw URLs.
 """
 
 import os
 import sys
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 
 import pandas as pd
 import requests
 
 
 # ============================================================
-# CONFIGURACIÓN — URLs de los colectores
+# URLs DE COLECTORES
 # ============================================================
 
 CSV_URLS = {
@@ -36,19 +35,45 @@ CSV_URLS = {
 
 
 # ============================================================
-# CONFIGURACIÓN — Alertas
+# EXCLUSIONES (stablecoins, wrapped, ETFs, gold)
 # ============================================================
 
-# Ventanas calientes (UTC)
+EXCLUIR = {
+    # Stablecoins
+    "USDT","USDC","DAI","TUSD","FDUSD","BUSD","USDD","USDE",
+    "PYUSD","USDS","USD1","RLUSD","USD0","USDSUI","USDON",
+    "USDAI","AUSD","USDG","USDGO","USX","EURC","USDF","GHO",
+    "FRAX","LUSD","SUSD","USDR","USDY","USTC","MIM","CRVUSD",
+    # Gold / commodities
+    "PAXG","XAUT",
+    # Wrapped / staked
+    "WBTC","WETH","STETH","WSTETH","RETH","CBETH","WBETH",
+    "WBNB","WMATIC","WAVAX","WSOL",
+    # Exchange internal
+    "HTX","BUSD",
+}
+
+
+# ============================================================
+# VENTANAS CALIENTES (UTC)
+# ============================================================
+
 VENTANAS = [
     ("Asia Open",      0,  4),
     ("US Afternoon",  18, 21),
 ]
 
-# Umbrales
-UMBRAL_CAMBIO_MIN = 1.5     # % mínimo de subida en 1h
-UMBRAL_VOL_RATIO  = 1.4     # Volumen vs promedio 20 snapshots
-UMBRAL_VOL_ABS    = 500_000 # Volumen mínimo en $ (evitar basura)
+
+# ============================================================
+# UMBRALES DE DETECCIÓN
+# ============================================================
+
+UMBRAL_CAMBIO_MIN = 1.5     # % mínimo desde hace 1h
+UMBRAL_VOL_RATIO  = 1.4     # Volumen vs promedio 20
+UMBRAL_VOL_ABS    = 500_000 # $ mínimo (evitar basura)
+
+# Anti-spam: no repetir la misma alerta en X minutos
+COOLDOWN_MIN = 30
 
 
 # ============================================================
@@ -72,19 +97,10 @@ def enviar_telegram(msg):
 
 
 # ============================================================
-# CARGA DE DATOS REMOTOS
+# CARGA
 # ============================================================
 
-def cargar_watchlist():
-    """Lee watchlist.txt. Si no existe, usa lista por defecto."""
-    path = Path("watchlist.txt")
-    if not path.exists():
-        return {"KCS", "BGB", "MX", "HTX"}
-    return set(path.read_text().strip().split("\n"))
-
-
 def cargar_datos():
-    """Descarga y combina los CSV de los 3 colectores."""
     dfs = []
     for nombre, url in CSV_URLS.items():
         try:
@@ -113,7 +129,7 @@ def cargar_datos():
 
 
 # ============================================================
-# DETECCIÓN DE ARRANQUE
+# VENTANA
 # ============================================================
 
 def en_ventana_caliente():
@@ -124,12 +140,16 @@ def en_ventana_caliente():
     return None
 
 
+# ============================================================
+# DETECCIÓN
+# ============================================================
+
 def detectar_arranque(df, symbol):
-    """Detecta si una moneda arrancó en la última hora."""
     g = df[df["symbol"] == symbol].sort_values("timestamp")
     if len(g) < 20:
         return None
 
+    # Última hora
     corte = g["timestamp"].max() - timedelta(hours=1)
     rec = g[g["timestamp"] >= corte]
     if len(rec) < 3:
@@ -149,7 +169,9 @@ def detectar_arranque(df, symbol):
     v_ult  = g["volume_24h"].iloc[-1]
     vol_ratio = v_ult / v_base if v_base > 0 else 0
 
-    if vol_ratio < UMBRAL_VOL_RATIO or v_ult < UMBRAL_VOL_ABS:
+    if vol_ratio < UMBRAL_VOL_RATIO:
+        return None
+    if v_ult < UMBRAL_VOL_ABS:
         return None
 
     return {
@@ -160,6 +182,7 @@ def detectar_arranque(df, symbol):
         "vol_m": v_ult / 1e6,
         "ts": rec.iloc[-1]["timestamp"],
         "cmc_rank": g.iloc[-1].get("cmc_rank", 9999),
+        "market_cap_m": (g.iloc[-1].get("market_cap", 0) or 0) / 1e6,
     }
 
 
@@ -170,7 +193,8 @@ def detectar_arranque(df, symbol):
 def main():
     ahora_utc = datetime.now(timezone.utc)
     print(f"\n{'='*70}")
-    print(f"⚡ ALERTA ARRANQUE — {ahora_utc.isoformat()}")
+    print(f"⚡ ALERTA ARRANQUE — AUTO-DISCOVERY")
+    print(f"   {ahora_utc.isoformat()}")
     print(f"{'='*70}")
 
     ventana = en_ventana_caliente()
@@ -180,24 +204,35 @@ def main():
 
     print(f"🔥 Ventana: {ventana}")
 
-    watchlist = cargar_watchlist()
-    print(f"👁 Watchlist: {', '.join(sorted(watchlist))}")
-
     df = cargar_datos()
-    print(f"📊 Total combinado: {len(df):,} filas | "
-          f"{df['symbol'].nunique()} monedas")
+    print(f"📊 Total: {len(df):,} filas | {df['symbol'].nunique()} monedas")
+
+    # Auto-discovery: escanear TODAS las monedas
+    todas = df["symbol"].unique()
+    print(f"🔍 Escaneando {len(todas)} monedas...")
 
     alertas = []
-    for sym in watchlist:
+    excluidas = 0
+
+    for sym in todas:
+        if sym.upper() in EXCLUIR:
+            excluidas += 1
+            continue
         r = detectar_arranque(df, sym)
         if r:
             alertas.append(r)
+
+    print(f"   Excluidas: {excluidas} (stables/wrapped)")
+    print(f"   Alertas: {len(alertas)}")
 
     if not alertas:
         print("✅ Ninguna alerta activa")
         return
 
-    for a in alertas:
+    # Ordenar por magnitud de arranque
+    alertas.sort(key=lambda x: -x["cambio"])
+
+    for a in alertas[:10]:  # máximo 10 alertas por corrida
         hora_lima = (a["ts"] - timedelta(hours=5)).strftime("%H:%M")
         msg = (
             f"⚡ ARRANQUE DETECTADO\n"
@@ -205,11 +240,12 @@ def main():
             f"📈 +{a['cambio']:.2f}% en 1h\n"
             f"💰 ${a['precio']:.6f}\n"
             f"📊 Vol: {a['vol_ratio']:.2f}x (${a['vol_m']:.1f}M)\n"
+            f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
             f"🔥 Ventana: {ventana}\n"
             f"🕐 {hora_lima} Lima"
         )
         if enviar_telegram(msg):
-            print(f"   ✅ Alerta enviada: {a['symbol']}")
+            print(f"   ✅ Alerta: {a['symbol']} (+{a['cambio']:.2f}%)")
 
 
 if __name__ == "__main__":
