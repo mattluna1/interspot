@@ -4,12 +4,7 @@ permissions:
   contents: write
 
 on:
-  schedule:
-    # Asia Open: 00:00-04:00 UTC → minutos 0-59 de cada hora en esa ventana
-    - cron: '*/10 0-4 * * *'
-    # US Afternoon: 18:00-21:00 UTC
-    - cron: '*/10 18-21 * * *'
-  workflow_dispatch:
+  workflow_dispatch:   # ← solo manual, cron-job.org lo dispara
 
 concurrency:
   group: alerta-arranque-interspot
@@ -28,7 +23,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: Install dependencies
         run: |
