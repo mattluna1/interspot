@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALERTA ARRANQUE + REENTRADA — 3 SEÑALES
+ALERTA ARRANQUE + REENTRADA — 3 SEÑALES + BTC CONTEXTO
   1. 🟡 TEMPRANA  → arranque con volumen empezando a entrar (1.2x+)
   2. 🚨 FUERTE    → arranque confirmado con volumen (1.4x+)
   3. 📐 REENTRADA → rebote en Fibo 61.8% tras pullback
+
+BTC se muestra como CONTEXTO (no bloquea alertas):
+  - 🟢 favorable / ⚪ neutral / 🟡 cuidado / 🔴 peligro
 """
 
 import os
@@ -48,19 +51,15 @@ EXCLUIR = {
 # UMBRALES — 3 SEÑALES
 # ============================================================
 
-# 🟡 TEMPRANA: volumen empezando a entrar
-TEMPRANA_CAMBIO_1H  = 1.5       # +1.5% en 1h
-TEMPRANA_VOL_MIN    = 1.2       # volumen 1.2x (empezando)
-TEMPRANA_VOL_MAX    = 1.4       # hasta 1.4x (arriba ya es FUERTE)
+TEMPRANA_CAMBIO_1H  = 1.5
+TEMPRANA_VOL_MIN    = 1.2
+TEMPRANA_VOL_MAX    = 1.4
 
-# 🚨 FUERTE: volumen confirmado
-FUERTE_CAMBIO_1H    = 1.5       # +1.5% en 1h
-FUERTE_VOL_MIN      = 1.4       # volumen 1.4x+
+FUERTE_CAMBIO_1H    = 1.5
+FUERTE_VOL_MIN      = 1.4
 
-# Comunes
-VOL_ABS_MIN         = 500_000   # $500K mínimo
+VOL_ABS_MIN         = 500_000
 
-# Filtros de frescura (aplican a TEMPRANA y FUERTE)
 MAX_CAMBIO_4H       = 5.0
 MAX_CAMBIO_24H      = 15.0
 
@@ -162,7 +161,80 @@ def cumple_calidad(mc, rank):
 
 
 # ============================================================
-# DETECCIÓN — ARRANQUE (TEMPRANA + FUERTE)
+# ANÁLISIS BTC — CONTEXTO (no bloquea)
+# ============================================================
+
+def analizar_btc(df):
+    """
+    Analiza BTC como contexto.
+    Retorna estado: 'UP' | 'FLAT' | 'DOWN_SOFT' | 'DOWN' | 'UNKNOWN'
+    """
+    g = df[df["symbol"] == "BTC"].sort_values("timestamp")
+    if len(g) < 40:
+        return {"estado": "UNKNOWN", "cambio_1h": 0, "cambio_4h": 0, "vol_ratio": 0}
+
+    ts_max = g["timestamp"].max()
+
+    # Ventana 1h
+    corte_1h = ts_max - timedelta(hours=1)
+    rec_1h = g[g["timestamp"] >= corte_1h]
+    if len(rec_1h) < 3:
+        return {"estado": "UNKNOWN", "cambio_1h": 0, "cambio_4h": 0, "vol_ratio": 0}
+
+    p_ini_1h = rec_1h.iloc[0]["price"]
+    p_fin = g.iloc[-1]["price"]
+    cambio_1h = ((p_fin - p_ini_1h) / p_ini_1h) * 100 if p_ini_1h > 0 else 0
+
+    # Ventana 4h
+    corte_4h = ts_max - timedelta(hours=4)
+    rec_4h = g[g["timestamp"] >= corte_4h]
+    p_ini_4h = rec_4h.iloc[0]["price"] if len(rec_4h) > 0 else p_ini_1h
+    cambio_4h = ((p_fin - p_ini_4h) / p_ini_4h) * 100 if p_ini_4h > 0 else 0
+
+    # Volumen
+    v_base = g["volume_24h"].tail(20).mean()
+    v_ult = g["volume_24h"].iloc[-1]
+    vol_ratio = v_ult / v_base if v_base > 0 else 0
+
+    # Clasificación
+    if cambio_1h > 1.0 and cambio_4h > 1.0:
+        estado = "UP"
+    elif cambio_1h < -1.5 or cambio_4h < -3.0:
+        estado = "DOWN"
+    elif cambio_1h < -0.5:
+        estado = "DOWN_SOFT"
+    else:
+        estado = "FLAT"
+
+    return {
+        "estado": estado,
+        "cambio_1h": cambio_1h,
+        "cambio_4h": cambio_4h,
+        "vol_ratio": vol_ratio,
+        "precio": p_fin,
+    }
+
+
+def _contexto_btc(btc):
+    """
+    Retorna (linea, aviso) en lenguaje humano.
+    linea: '🟢 BTC: favorable'
+    aviso: advertencia adicional (puede ser "")
+    """
+    mapa = {
+        "UP":        ("🟢 BTC: favorable", ""),
+        "FLAT":      ("⚪ BTC: neutral", ""),
+        "DOWN_SOFT": ("🟡 BTC: cuidado",
+                      "⚠️ Mercado bajando — ojo con alts"),
+        "DOWN":      ("🔴 BTC: peligro",
+                      "🚨 BTC cayendo fuerte — verifica gráfico antes de entrar"),
+        "UNKNOWN":   ("❓ BTC: sin datos", ""),
+    }
+    return mapa.get(btc["estado"], ("⚪ BTC: neutral", ""))
+
+
+# ============================================================
+# DETECCIÓN — ARRANQUE
 # ============================================================
 
 def detectar_arranque(df, symbol):
@@ -217,9 +289,8 @@ def detectar_arranque(df, symbol):
     if v_ult < VOL_ABS_MIN:
         return None
 
-    # === CLASIFICACIÓN ===
+    # Clasificación
     señal = None
-
     if cambio_1h >= FUERTE_CAMBIO_1H and vol_ratio >= FUERTE_VOL_MIN:
         señal = "FUERTE"
     elif (cambio_1h >= TEMPRANA_CAMBIO_1H and
@@ -263,7 +334,6 @@ def detectar_reentrada_fibo(df, symbol):
     if not cumple_calidad(mc, rank):
         return None
 
-    # Pump previo 48h
     corte_48 = ts_max - timedelta(hours=PUMP_VENTANA_H)
     rec_48 = g[g["timestamp"] >= corte_48]
     if len(rec_48) < 20:
@@ -292,7 +362,6 @@ def detectar_reentrada_fibo(df, symbol):
     if not (FIBO_MIN <= pos_actual <= FIBO_MAX):
         return None
 
-    # Confirmación de rebote
     corte_12 = ts_max - timedelta(hours=12)
     rec_12 = g[g["timestamp"] >= corte_12]
     if len(rec_12) < 5:
@@ -336,20 +405,22 @@ def detectar_reentrada_fibo(df, symbol):
 
 
 # ============================================================
-# ENVÍO DE MENSAJES
+# ENVÍO DE MENSAJES (con contexto BTC)
 # ============================================================
 
-def enviar_alerta_arranque(a):
+def enviar_alerta_arranque(a, btc):
     hora_lima = (a["ts"] - timedelta(hours=5)).strftime("%H:%M")
 
     if a["señal"] == "FUERTE":
         emoji = "🚨"
         titulo = "ARRANQUE FUERTE"
-        nota = "✅ Volumen CONFIRMA — entrada con confianza"
-    else:  # TEMPRANA
+        nota = "✅ Volumen CONFIRMA"
+    else:
         emoji = "🟡"
         titulo = "ARRANQUE TEMPRANO"
-        nota = "⚠️ Volumen empezando (1.2-1.4x) — verificar gráfico"
+        nota = "⚠️ Verificar gráfico"
+
+    linea_btc, aviso_btc = _contexto_btc(btc)
 
     msg = (
         f"{emoji} {titulo}\n"
@@ -359,14 +430,21 @@ def enviar_alerta_arranque(a):
         f"💰 ${a['precio']:.6f}\n"
         f"📊 Vol: {a['vol_ratio']:.2f}x (${a['vol_m']:.1f}M)\n"
         f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"{linea_btc}\n"
         f"🕐 {hora_lima} Lima\n"
         f"{nota}"
     )
+    if aviso_btc:
+        msg += f"\n{aviso_btc}"
+
     return enviar_telegram(msg)
 
 
-def enviar_alerta_reentrada(a):
+def enviar_alerta_reentrada(a, btc):
     hora_lima = (a["ts"] - timedelta(hours=5)).strftime("%H:%M")
+    linea_btc, aviso_btc = _contexto_btc(btc)
+
     msg = (
         f"📐 REENTRADA FIBO\n"
         f"🪙 {a['symbol']} (rank {a['cmc_rank']})\n"
@@ -385,9 +463,13 @@ def enviar_alerta_reentrada(a):
         f"📈 Rebote: +{a['rebote_pct']:.2f}% desde pullback\n"
         f"📊 Vol: {a['vol_ratio']:.2f}x (${a['vol_m']:.1f}M)\n"
         f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
-        f"🕐 {hora_lima} Lima\n"
-        f"💡 Segunda entrada tras pullback"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"{linea_btc}\n"
+        f"🕐 {hora_lima} Lima"
     )
+    if aviso_btc:
+        msg += f"\n{aviso_btc}"
+
     return enviar_telegram(msg)
 
 
@@ -400,7 +482,7 @@ def main():
     ahora_lima = ahora - timedelta(hours=5)
 
     print(f"\n{'='*70}")
-    print(f"⚡ ARRANQUE (TEMPRANA + FUERTE) + 📐 REENTRADA FIBO")
+    print(f"⚡ ARRANQUE + 📐 REENTRADA — BTC CONTEXTO")
     print(f"   UTC:  {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"   Lima: {ahora_lima.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*70}")
@@ -408,18 +490,27 @@ def main():
     df = cargar_datos()
     print(f"📊 Total: {len(df):,} filas | {df['symbol'].nunique()} monedas")
 
+    # === ANÁLISIS BTC (solo contexto, no bloquea) ===
+    btc = analizar_btc(df)
+    linea_btc, aviso_btc = _contexto_btc(btc)
+
+    print(f"\n🔍 CONTEXTO BTC:")
+    print(f"   {linea_btc}")
+    if aviso_btc:
+        print(f"   {aviso_btc}")
+
+    # Escanear monedas
     todas = df["symbol"].unique()
-    print(f"🔍 Escaneando {len(todas)} monedas...")
+    print(f"\n🔍 Escaneando {len(todas)} monedas...")
 
     fuertes = []
     tempranas = []
     reentradas = []
 
     for sym in todas:
-        if sym.upper() in EXCLUIR:
+        if sym.upper() in EXCLUIR or sym.upper() == "BTC":
             continue
 
-        # Arranque (FUERTE o TEMPRANA)
         r1 = detectar_arranque(df, sym)
         if r1:
             if r1["señal"] == "FUERTE":
@@ -427,7 +518,6 @@ def main():
             else:
                 tempranas.append(r1)
 
-        # Reentrada Fibo
         r2 = detectar_reentrada_fibo(df, sym)
         if r2:
             reentradas.append(r2)
@@ -436,26 +526,39 @@ def main():
     print(f"   🟡 TEMPRANAS:  {len(tempranas)}")
     print(f"   📐 REENTRADAS: {len(reentradas)}")
 
-    # 1) FUERTES primero (prioridad máxima)
+    # === ENVÍO — TODAS las alertas se envían con contexto BTC ===
+    enviadas = 0
+
+    # 1) FUERTES
     fuertes.sort(key=lambda x: -x["cambio_1h"])
     for a in fuertes[:MAX_POR_TIPO]:
-        if enviar_alerta_arranque(a):
+        if enviar_alerta_arranque(a, btc):
+            enviadas += 1
             print(f"   🚨 FUERTE: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
                   f"vol {a['vol_ratio']:.2f}x)")
 
     # 2) TEMPRANAS
     tempranas.sort(key=lambda x: -x["cambio_1h"])
     for a in tempranas[:MAX_POR_TIPO]:
-        if enviar_alerta_arranque(a):
+        if enviar_alerta_arranque(a, btc):
+            enviadas += 1
             print(f"   🟡 TEMPRANA: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
                   f"vol {a['vol_ratio']:.2f}x)")
 
-    # 3) REENTRADAS FIBO
+    # 3) REENTRADAS
     reentradas.sort(key=lambda x: (x["distancia_fibo"], -x["vol_ratio"]))
     for a in reentradas[:MAX_POR_TIPO]:
-        if enviar_alerta_reentrada(a):
+        if enviar_alerta_reentrada(a, btc):
+            enviadas += 1
             print(f"   📐 REENTRADA: {a['symbol']} (fibo {a['pos_actual']:.1f}% | "
-                  f"rebote +{a['rebote_pct']:.2f}% | vol {a['vol_ratio']:.2f}x)")
+                  f"vol {a['vol_ratio']:.2f}x)")
+
+    # === RESUMEN ===
+    print(f"\n{'='*70}")
+    print(f"📢 RESUMEN")
+    print(f"   {linea_btc}")
+    print(f"   Alertas enviadas: {enviadas}")
+    print(f"{'='*70}")
 
 
 if __name__ == "__main__":
