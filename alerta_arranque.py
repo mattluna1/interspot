@@ -5,7 +5,7 @@ ALERTA ARRANQUE + REENTRADA — 3 SEÑALES + BTC 6 ESTADOS
   1. 🟡 TEMPRANA  → arranque con volumen empezando (1.2x+)
   2. 🚨 FUERTE    → arranque confirmado (1.4x+)
   3. 📐 REENTRADA → rebote en Fibo 61.8%
-  
+
 BTC análisis (6 estados):
   - 🟢 UP        → subiendo sostenido
   - ⚪ FLAT      → plano
@@ -13,6 +13,11 @@ BTC análisis (6 estados):
   - 🔴 DOWN      → cayendo fuerte
   - 🟣 BOTTOM    → fondo detectado (preparar)
   - 🟢 RECOVERY  → rebote tras caída (mejor momento)
+
+Bloqueo gradual por BTC:
+  🔴 DOWN      → bloquea TODAS las alertas
+  🟡 DOWN_SOFT → bloquea TEMPRANAS y REENTRADAS (permite FUERTES)
+  Otros        → permite todas
 
 Aviso especial cuando BTC CAMBIA de estado.
 """
@@ -660,29 +665,54 @@ def main():
     print(f"   🟡 TEMPRANAS:  {len(tempranas)}")
     print(f"   📐 REENTRADAS: {len(reentradas)}")
 
-    # === ENVÍO ===
+    # ═══════════════════════════════════════════════════════════
+    # ✅ NUEVO: BLOQUEO GRADUAL SEGÚN BTC
+    # ═══════════════════════════════════════════════════════════
     enviadas = 0
+    btc_estado = btc.get("estado", "FLAT")
 
-    fuertes.sort(key=lambda x: -x["cambio_1h"])
-    for a in fuertes[:MAX_POR_TIPO]:
-        if enviar_alerta_arranque(a, btc):
-            enviadas += 1
-            print(f"   🚨 FUERTE: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
-                  f"vol {a['vol_ratio']:.2f}x)")
+    # Reglas de bloqueo
+    bloquear_tempranas = btc_estado in ("DOWN", "DOWN_SOFT")
+    bloquear_fuertes   = btc_estado == "DOWN"
+    bloquear_reentradas = btc_estado in ("DOWN", "DOWN_SOFT")
 
-    tempranas.sort(key=lambda x: -x["cambio_1h"])
-    for a in tempranas[:MAX_POR_TIPO]:
-        if enviar_alerta_arranque(a, btc):
-            enviadas += 1
-            print(f"   🟡 TEMPRANA: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
-                  f"vol {a['vol_ratio']:.2f}x)")
+    print(f"\n📋 Política BTC {btc_estado}:")
+    print(f"   TEMPRANAS:  {'🚫 bloqueadas' if bloquear_tempranas else '✅ permitidas'}")
+    print(f"   FUERTES:    {'🚫 bloqueadas' if bloquear_fuertes else '✅ permitidas'}")
+    print(f"   REENTRADAS: {'🚫 bloqueadas' if bloquear_reentradas else '✅ permitidas'}")
 
-    reentradas.sort(key=lambda x: (x["distancia_fibo"], -x["vol_ratio"]))
-    for a in reentradas[:MAX_POR_TIPO]:
-        if enviar_alerta_reentrada(a, btc):
-            enviadas += 1
-            print(f"   📐 REENTRADA: {a['symbol']} (fibo {a['pos_actual']:.1f}% | "
-                  f"vol {a['vol_ratio']:.2f}x)")
+    # ─── FUERTES ───
+    if not bloquear_fuertes:
+        fuertes.sort(key=lambda x: -x["cambio_1h"])
+        for a in fuertes[:MAX_POR_TIPO]:
+            if enviar_alerta_arranque(a, btc):
+                enviadas += 1
+                print(f"   🚨 FUERTE: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
+                      f"vol {a['vol_ratio']:.2f}x)")
+    elif fuertes:
+        print(f"\n   ⏸️ {len(fuertes)} FUERTES bloqueadas por BTC {btc_estado}")
+
+    # ─── TEMPRANAS ───
+    if not bloquear_tempranas:
+        tempranas.sort(key=lambda x: -x["cambio_1h"])
+        for a in tempranas[:MAX_POR_TIPO]:
+            if enviar_alerta_arranque(a, btc):
+                enviadas += 1
+                print(f"   🟡 TEMPRANA: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
+                      f"vol {a['vol_ratio']:.2f}x)")
+    elif tempranas:
+        print(f"   ⏸️ {len(tempranas)} TEMPRANAS bloqueadas por BTC {btc_estado}")
+
+    # ─── REENTRADAS ───
+    if not bloquear_reentradas:
+        reentradas.sort(key=lambda x: (x["distancia_fibo"], -x["vol_ratio"]))
+        for a in reentradas[:MAX_POR_TIPO]:
+            if enviar_alerta_reentrada(a, btc):
+                enviadas += 1
+                print(f"   📐 REENTRADA: {a['symbol']} (fibo {a['pos_actual']:.1f}% | "
+                      f"vol {a['vol_ratio']:.2f}x)")
+    elif reentradas:
+        print(f"   ⏸️ {len(reentradas)} REENTRADAS bloqueadas por BTC {btc_estado}")
 
     # === RESUMEN ===
     print(f"\n{'='*70}")
