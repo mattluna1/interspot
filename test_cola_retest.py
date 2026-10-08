@@ -1,21 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-TEST: Patrón completo Cola → Retest → Continuación en BTC
+TEST: Patrón Cola → Movimiento → Retest → Continuación en BTC
 
-FASES:
-  1. BTC hace vela con cola larga (rechazo)
-  2. Precio se mueve en dirección de la cola (confirma rechazo)
-  3. Precio REGRESA a la zona de la cola (retest)
-  4. Precio rebota en el retest → continúa
-
-Mide:
-  - Cuántas veces ocurre cada fase
-  - Tasa de éxito del patrón completo
-  - Frecuencia (cada cuántas horas)
-  - Duración de cada fase
+Usa el cache de OKX (data/cache/BTC.json) que tiene 7 días de velas.
 """
 
+import json
 import os
 import sys
 from datetime import datetime, timezone, timedelta
@@ -25,62 +16,72 @@ import pandas as pd
 import requests
 
 
-CSV_URLS = {
-    "top100": "https://raw.githubusercontent.com/mattluna3/inspector/main/data/cmc/market_history_top100.csv",
-    "emerging": "https://raw.githubusercontent.com/mattluna3/inspector/main/data/cmc/market_history_emerging.csv",
-    "201_300": "https://raw.githubusercontent.com/emerging2/inspector2/main/data/cmc/market_history_201_300.csv",
-}
-
-
 # ============================================================
 # CONFIGURACIÓN DEL PATRÓN
 # ============================================================
 
-# Fase 1: Cola larga
-RANGO_COLA_MIN = 0.6        # cola >= 60% del rango total
-RANGO_CUERPO_MAX = 0.3      # cuerpo <= 30% del rango total
+RANGO_COLA_MIN = 0.6
+RANGO_CUERPO_MAX = 0.3
 
-# Fase 2: Movimiento inicial en dirección de la cola
-MOVIMIENTO_INICIAL_MIN = 1.0   # +1% en dirección esperada
-VENTANA_INICIAL = 6            # en 6 velas (6h)
+MOVIMIENTO_INICIAL_MIN = 1.0
+VENTANA_INICIAL = 6
 
-# Fase 3: Retest del nivel
-TOLERANCIA_RETEST = 0.5     # % de tolerancia del nivel
-VENTANA_RETEST = 12         # en 12 velas (12h)
+TOLERANCIA_RETEST = 0.5
+VENTANA_RETEST = 12
 
-# Fase 4: Continuación
-CONTINUACION_MIN = 2.0      # +2% desde el retest
-VENTANA_CONTINUACION = 12   # en 12 velas (12h)
+CONTINUACION_MIN = 2.0
+VENTANA_CONTINUACION = 12
+
+# Cache de OKX (BTC)
+CACHE_BTC_URL = (
+    "https://raw.githubusercontent.com/Interpage188/"
+    "interpage/main/data/cache/BTC.json"
+)
 
 
 # ============================================================
-# CARGA
+# CARGA — Desde cache de OKX
 # ============================================================
 
-def cargar_datos():
-    dfs = []
-    for _, url in CSV_URLS.items():
+def cargar_velas_btc():
+    """Carga las velas de BTC desde el cache de OKX."""
+    try:
+        r = requests.get(CACHE_BTC_URL, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"❌ Error cargando cache: {e}")
+        sys.exit(1)
+    
+    # Buscar velas_1h
+    velas_raw = data.get("velas_1h", [])
+    if not velas_raw:
+        print("❌ No hay velas_1h en el cache")
+        sys.exit(1)
+    
+    print(f"📊 Velas 1h en cache: {len(velas_raw)}")
+    
+    # Convertir a DataFrame
+    velas = []
+    for v in velas_raw:
         try:
-            r = requests.get(url, timeout=30)
-            df = pd.read_csv(StringIO(r.text))
-            dfs.append(df)
-        except Exception:
+            velas.append({
+                "timestamp": pd.to_datetime(int(v["ts"]), unit="ms", utc=True),
+                "open": float(v["o"]),
+                "high": float(v["h"]),
+                "low": float(v["l"]),
+                "close": float(v["c"]),
+            })
+        except (KeyError, ValueError, TypeError):
             continue
-    df = pd.concat(dfs, ignore_index=True)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
-    df["price"] = pd.to_numeric(df["price"], errors="coerce")
-    df = df.dropna(subset=["timestamp", "price"])
-    df = df[df["price"] > 0]
-    df = df.drop_duplicates(subset=["timestamp", "symbol"], keep="last")
-    df = df.sort_values(["symbol", "timestamp"]).reset_index(drop=True)
+    
+    if not velas:
+        print("❌ No se pudieron parsear las velas")
+        sys.exit(1)
+    
+    df = pd.DataFrame(velas)
+    df = df.sort_values("timestamp").reset_index(drop=True)
     return df
-
-
-def construir_velas_1h(g):
-    g = g.set_index("timestamp").sort_index()
-    agg = g["price"].resample("1h").agg(["first", "max", "min", "last"])
-    agg.columns = ["open", "high", "low", "close"]
-    return agg.dropna()
 
 
 # ============================================================
@@ -105,8 +106,7 @@ def detectar_cola(row):
         return {
             "tipo": "inferior",
             "magnitud": cola_inf / rango,
-            "nivel": l,           # el mínimo de la cola
-            "nivel_extremo": l,
+            "nivel": l,
             "nivel_close": c,
             "esperado": "subida",
         }
@@ -114,8 +114,7 @@ def detectar_cola(row):
         return {
             "tipo": "superior",
             "magnitud": cola_sup / rango,
-            "nivel": h,           # el máximo de la cola
-            "nivel_extremo": h,
+            "nivel": h,
             "nivel_close": c,
             "esperado": "bajada",
         }
@@ -127,9 +126,6 @@ def detectar_cola(row):
 # ============================================================
 
 def analizar_patron(velas, idx, cola):
-    """
-    Analiza las fases 2, 3 y 4 después de la cola en idx.
-    """
     n = len(velas)
     esperado = cola["esperado"]
     nivel = cola["nivel"]
@@ -145,7 +141,7 @@ def analizar_patron(velas, idx, cola):
         "patron_completo": False,
     }
     
-    # ═══ FASE 2: Movimiento inicial en dirección esperada ═══
+    # FASE 2
     fin_fase2 = min(idx + 1 + VENTANA_INICIAL, n)
     if fin_fase2 <= idx + 1:
         return resultado
@@ -169,7 +165,7 @@ def analizar_patron(velas, idx, cola):
     resultado["fase2_movimiento"] = True
     idx_fin_fase2 = idx + 1 + VENTANA_INICIAL
     
-    # ═══ FASE 3: Retest del nivel de la cola ═══
+    # FASE 3
     fin_fase3 = min(idx_fin_fase2 + VENTANA_RETEST, n)
     if fin_fase3 <= idx_fin_fase2:
         return resultado
@@ -178,13 +174,13 @@ def analizar_patron(velas, idx, cola):
     if ventana3.empty:
         return resultado
     
-    # Buscar retest del nivel
-    for j, (ts, row) in enumerate(ventana3.iterrows()):
+    idx_retest = None
+    precio_retest = None
+    for j in range(len(ventana3)):
+        row = ventana3.iloc[j]
         if esperado == "subida":
-            # Retest = precio regresa cerca del mínimo de la cola
             distancia = abs(row["low"] - nivel) / nivel * 100
         else:
-            # Retest = precio regresa cerca del máximo de la cola
             distancia = abs(row["high"] - nivel) / nivel * 100
         
         if distancia <= TOLERANCIA_RETEST:
@@ -197,7 +193,7 @@ def analizar_patron(velas, idx, cola):
     if not resultado["fase3_retest"]:
         return resultado
     
-    # ═══ FASE 4: Continuación tras retest ═══
+    # FASE 4
     fin_fase4 = min(idx_retest + 1 + VENTANA_CONTINUACION, n)
     if fin_fase4 <= idx_retest + 1:
         return resultado
@@ -228,7 +224,7 @@ def analizar_patron(velas, idx, cola):
 
 def main():
     print("=" * 90)
-    print("🔬 TEST: Patrón Cola → Movimiento → Retest → Continuación")
+    print("🔬 TEST: Patrón Cola → Movimiento → Retest → Continuación (BTC)")
     print("=" * 90)
     print(f"\nConfiguración:")
     print(f"  Fase 1 — Cola: ≥{RANGO_COLA_MIN*100:.0f}% del rango, cuerpo ≤{RANGO_CUERPO_MAX*100:.0f}%")
@@ -236,18 +232,12 @@ def main():
     print(f"  Fase 3 — Retest: ±{TOLERANCIA_RETEST}% del nivel en {VENTANA_RETEST}h")
     print(f"  Fase 4 — Continuación: ≥{CONTINUACION_MIN}% en {VENTANA_CONTINUACION}h")
     
-    df = cargar_datos()
-    print(f"\n📊 {len(df):,} filas | {df['symbol'].nunique()} monedas")
+    velas = cargar_velas_btc()
+    print(f"📊 Velas útiles: {len(velas)}")
     
-    btc = df[df["symbol"] == "BTC"].sort_values("timestamp")
-    print(f"📊 BTC: {len(btc)} snapshots")
-    
-    if len(btc) < 200:
-        print("⚠️ Pocos datos")
-        return
-    
-    velas = construir_velas_1h(btc)
-    print(f"📊 Velas 1h: {len(velas)}")
+    if len(velas) < 100:
+        print(f"⚠️ Solo {len(velas)} velas — necesitamos 100+ para análisis útil")
+        print("   El cache de OKX tiene ~168 velas de 1h (7 días)")
     
     # Analizar cada vela
     resultados = []
@@ -260,7 +250,7 @@ def main():
         patron = analizar_patron(velas, i, cola)
         
         resultados.append({
-            "timestamp": velas.index[i],
+            "timestamp": velas.iloc[i]["timestamp"],
             "tipo": cola["tipo"],
             "magnitud": cola["magnitud"],
             "nivel": cola["nivel"],
@@ -281,40 +271,32 @@ def main():
     rdf = pd.DataFrame(resultados)
     total = len(rdf)
     
+    # ═══ Fases (con conversión explícita a int) ═══
+    n_f2 = int(rdf["fase2_mov"].sum())
+    n_f3 = int(rdf["fase3_retest"].sum())
+    n_f4 = int(rdf["fase4_cont"].sum())
+    n_completo = int(rdf["completo"].sum())
+    
+    n_f3_de_f2 = int(rdf[rdf["fase2_mov"]]["fase3_retest"].sum()) if n_f2 > 0 else 0
+    n_f4_de_f3 = int(rdf[rdf["fase3_retest"]]["fase4_cont"].sum()) if n_f3 > 0 else 0
+    
     print(f"\n{'='*90}")
     print(f"📊 RESULTADOS: {total} colas largas detectadas")
-    print(f"{'='*90}")
+    print(f"{'='*90}\n")
     
-    # ═══ Análisis por fase ═══
-    print(f"\n📈 ANÁLISIS POR FASE (de {total} colas):")
+    print(f"📈 ANÁLISIS POR FASE (de {total} colas):")
     print("-" * 90)
-    
-    # Fase 1: siempre cierta (son las colas detectadas)
     print(f"  Fase 1 — Colas detectadas:                {total:>5} (100.0%)")
+    print(f"  Fase 2 — Movimiento inicial en dirección: {n_f2:>5} ({n_f2/total*100:>5.1f}%)")
+    print(f"  Fase 3 — Retest del nivel:                {n_f3:>5} ({n_f3/total*100:>5.1f}%)")
+    if n_f2 > 0:
+        print(f"           (de las que tuvieron Fase 2:     {n_f3_de_f2:>5} ({n_f3_de_f2/n_f2*100:>5.1f}%))")
+    print(f"  Fase 4 — Continuación tras retest:        {n_f4:>5} ({n_f4/total*100:>5.1f}%)")
+    if n_f3 > 0:
+        print(f"           (de las que llegaron a Fase 3:   {n_f4_de_f3:>5} ({n_f4_de_f3/n_f3*100:>5.1f}%))")
+    print(f"\n  🎯 PATRÓN COMPLETO (todas las fases):     {n_completo:>5} ({n_completo/total*100:>5.1f}%)")
     
-    # Fase 2: movimiento inicial
-    f2 = rdf["fase2_mov"].sum()
-    print(f"  Fase 2 — Movimiento inicial en dirección: {f2:>5} ({f2/total*100:>5.1f}%)")
-    
-    # Fase 3: retest
-    f3 = rdf["fase3_retest"].sum()
-    f3_de_f2 = rdf[rdf["fase2_mov"]]["fase3_retest"].sum() if f2 > 0 else 0
-    print(f"  Fase 3 — Retest del nivel:                {f3:>5} ({f3/total*100:>5.1f}%)")
-    if f2 > 0:
-        print(f"           (de las que tuvieron Fase 2:     {f3_de_f2:>5} ({f3_de_f2/f2*100:>5.1f}%))")
-    
-    # Fase 4: continuación
-    f4 = rdf["fase4_cont"].sum()
-    f4_de_f3 = rdf[rdf["fase3_retest"]]["fase4_cont"].sum() if f3 > 0 else 0
-    print(f"  Fase 4 — Continuación tras retest:        {f4:>5} ({f4/total*100:>5.1f}%)")
-    if f3 > 0:
-        print(f"           (de las que llegaron a Fase 3:   {f4_de_f3:>5} ({f4_de_f3/f3*100:>5.1f}%))")
-    
-    # Patrón completo
-    completo = rdf["completo"].sum()
-    print(f"\n  🎯 PATRÓN COMPLETO (todas las fases):     {completo:>5} ({completo/total*100:>5.1f}%)")
-    
-    # ═══ Por tipo de cola ═══
+    # ═══ Por tipo ═══
     print(f"\n{'='*90}")
     print(f"📊 POR TIPO DE COLA")
     print(f"{'='*90}")
@@ -323,15 +305,20 @@ def main():
         sub = rdf[rdf["tipo"] == tipo]
         if sub.empty:
             continue
-        n = len(sub)
-        comp = sub["completo"].sum()
-        print(f"\n  Cola {tipo.upper()} ({n} casos):")
-        print(f"    Fase 2 (mov inicial):  {sub['fase2_mov'].sum():>3} ({sub['fase2_mov'].sum()/n*100:.1f}%)")
-        print(f"    Fase 3 (retest):       {sub['fase3_retest'].sum():>3} ({sub['fase3_retest'].sum()/n*100:.1f}%)")
-        print(f"    Fase 4 (continuación): {sub['fase4_cont'].sum():>3} ({sub['fase4_cont'].sum()/n*100:.1f}%)")
-        print(f"    Patrón completo:       {comp:>3} ({comp/n*100:.1f}%)")
-        if comp > 0:
-            print(f"    → Movimiento prom. Fase 4: {sub[sub['fase4_cont']]['fase4_pct'].mean():+.2f}%")
+        n_tipo = len(sub)
+        n_f2_tipo = int(sub["fase2_mov"].sum())
+        n_f3_tipo = int(sub["fase3_retest"].sum())
+        n_f4_tipo = int(sub["fase4_cont"].sum())
+        n_comp_tipo = int(sub["completo"].sum())
+        
+        print(f"\n  Cola {tipo.upper()} ({n_tipo} casos):")
+        print(f"    Fase 2 (mov inicial):  {n_f2_tipo:>3} ({n_f2_tipo/n_tipo*100:.1f}%)")
+        print(f"    Fase 3 (retest):       {n_f3_tipo:>3} ({n_f3_tipo/n_tipo*100:.1f}%)")
+        print(f"    Fase 4 (continuación): {n_f4_tipo:>3} ({n_f4_tipo/n_tipo*100:.1f}%)")
+        print(f"    Patrón completo:       {n_comp_tipo:>3} ({n_comp_tipo/n_tipo*100:.1f}%)")
+        if n_comp_tipo > 0:
+            prom = sub[sub["fase4_cont"]]["fase4_pct"].mean()
+            print(f"    → Movimiento prom. Fase 4: {prom:+.2f}%")
     
     # ═══ Frecuencia ═══
     print(f"\n{'='*90}")
@@ -340,33 +327,35 @@ def main():
     
     if len(rdf) > 1:
         duracion_h = (rdf["timestamp"].max() - rdf["timestamp"].min()).total_seconds() / 3600
-        colas_por_hora = len(rdf) / duracion_h
-        completo_por_hora = completo / duracion_h
-        
-        print(f"\n  Período analizado: {duracion_h:.0f} horas ({duracion_h/24:.1f} días)")
-        print(f"  Colas detectadas: {len(rdf)}")
-        print(f"  → Frecuencia: 1 cola cada {1/colas_por_hora:.1f}h (aprox)")
-        
-        if completo > 0:
-            print(f"\n  Patrones completos: {completo}")
-            print(f"  → Frecuencia: 1 patrón completo cada {1/completo_por_hora:.1f}h")
-            print(f"  → Es decir: ~{completo_por_hora*24:.1f} patrones por día")
+        if duracion_h > 0:
+            colas_por_hora = len(rdf) / duracion_h
+            print(f"\n  Período analizado: {duracion_h:.0f} horas ({duracion_h/24:.1f} días)")
+            print(f"  Colas detectadas: {len(rdf)}")
+            print(f"  → Frecuencia: 1 cola cada {1/colas_por_hora:.1f}h")
+            
+            if n_completo > 0:
+                completo_por_hora = n_completo / duracion_h
+                print(f"\n  Patrones completos: {n_completo}")
+                print(f"  → Frecuencia: 1 patrón cada {1/completo_por_hora:.1f}h")
+                print(f"  → ~{completo_por_hora*24:.1f} patrones/día")
     
-    # ═══ Duración de fases ═══
+    # ═══ Duración de fases (usa las variables con nombres únicos) ═══
     print(f"\n{'='*90}")
-    print(f"⏱️ DURACIÓN DE FASES (promedio)")
+    print(f"⏱️ DURACIÓN DE FASES")
     print(f"{'='*90}")
     
-    if f3 > 0:
+    if n_f3 > 0:
         velas_retest = rdf[rdf["fase3_retest"]]["fase3_velas"]
         print(f"\n  Fase 2 → Fase 3 (retest):")
         print(f"    Promedio: {velas_retest.mean():.1f}h")
         print(f"    Mediana:  {velas_retest.median():.1f}h")
         print(f"    Rango:    {velas_retest.min()}h a {velas_retest.max()}h")
+    else:
+        print("\n  ⚪ Sin datos (ninguna cola hizo retest)")
     
-    # ═══ Últimas 15 colas ═══
+    # ═══ Últimas 15 colas (variables con nombres únicos) ═══
     print(f"\n{'='*90}")
-    print(f"📋 ÚLTIMAS 15 COLAS")
+    print(f"📋 ÚLTIMAS {min(15, len(rdf))} COLAS")
     print(f"{'='*90}")
     
     print(f"\n{'FECHA':<18} {'TIPO':<10} {'F2':>4} {'F3':>4} {'F4':>4} {'COMPLETO':>9} {'MOV F4':>8}")
@@ -374,38 +363,37 @@ def main():
     
     for _, r in rdf.tail(15).iterrows():
         fecha = r["timestamp"].strftime("%m-%d %H:%M")
-        f2 = "✅" if r["fase2_mov"] else "❌"
-        f3 = "✅" if r["fase3_retest"] else "❌"
-        f4 = "✅" if r["fase4_cont"] else "❌"
-        comp = "🎯 SÍ" if r["completo"] else "—"
+        f2_icon = "✅" if r["fase2_mov"] else "❌"
+        f3_icon = "✅" if r["fase3_retest"] else "❌"
+        f4_icon = "✅" if r["fase4_cont"] else "❌"
+        comp_icon = "🎯 SÍ" if r["completo"] else "—"
         mov = f"{r['fase4_pct']:+.2f}%" if r["fase4_cont"] else "—"
-        print(f"{fecha:<18} {r['tipo']:<10} {f2:>4} {f3:>4} {f4:>4} {comp:>9} {mov:>8}")
+        print(f"{fecha:<18} {r['tipo']:<10} {f2_icon:>4} {f3_icon:>4} {f4_icon:>4} {comp_icon:>9} {mov:>8}")
     
-    # ═══ VEREDICTO ═══
+    # ═══ Veredicto ═══
     print(f"\n{'='*90}")
     print(f"🎯 VEREDICTO")
     print(f"{'='*90}")
     
     if total > 0:
-        tasa_completa = completo / total * 100
-        if f3 > 0:
-            tasa_f4_de_f3 = f4 / f3 * 100
-        else:
-            tasa_f4_de_f3 = 0
+        tasa_completa = n_completo / total * 100
+        tasa_f4_de_f3 = (n_f4_de_f3 / n_f3 * 100) if n_f3 > 0 else 0
         
-        print(f"\n  Probabilidad de patrón completo (desde cola): {tasa_completa:.1f}%")
-        print(f"  Probabilidad de continuación (si hay retest): {tasa_f4_de_f3:.1f}%")
+        print(f"\n  Patrón completo (desde cola):       {tasa_completa:.1f}%")
+        print(f"  Continuación (si hay retest):        {tasa_f4_de_f3:.1f}%")
         
-        if tasa_f4_de_f3 > 60:
+        if n_f3 < 3:
+            print(f"\n  ⚠️ MUESTRA INSUFICIENTE")
+            print(f"     Solo {n_f3} casos llegaron a Fase 3")
+            print(f"     Necesitas más datos (mínimo 15-20 retests)")
+        elif tasa_f4_de_f3 > 60:
             print(f"\n  ✅ EL PATRÓN FUNCIONA")
             print(f"     Cuando hay cola + movimiento + retest → continuación")
-            print(f"     Tasa de acierto: {tasa_f4_de_f3:.1f}%")
         elif tasa_f4_de_f3 > 50:
             print(f"\n  🟡 SEÑAL MODERADA")
-            print(f"     Utilizable como filtro pero no como señal única")
+            print(f"     Utilizable como filtro, no como señal única")
         else:
             print(f"\n  ❌ NO HAY PATRÓN CLARO")
-            print(f"     Las colas no preceden movimientos predecibles")
 
 
 if __name__ == "__main__":
