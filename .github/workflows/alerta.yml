@@ -4,7 +4,7 @@ permissions:
   contents: write
 
 on:
-  workflow_dispatch:   # ← solo manual, cron-job.org lo dispara
+  workflow_dispatch:
 
 concurrency:
   group: alerta-arranque-interspot
@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -34,3 +36,18 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python -u alerta_arranque.py
+
+      - name: Commit BTC state
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          if [ -f btc_state.json ]; then
+            git add btc_state.json
+            if ! git diff --cached --quiet; then
+              git commit -m "update btc_state [skip ci]"
+              git pull --rebase origin main || true
+              git push || true
+            fi
+          fi
