@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DETECTOR DE OLEADAS — Corre en GitHub Actions
+DETECTOR DE OLEADAS — GitHub Edition
 Descarga CSV de los 3 recolectores y detecta la secuencia de oleadas.
 
 FIXES aplicados:
-  - Descarta monedas que no subieron en la ventana
-  - Busca arranque en la segunda mitad (no en el mínimo absoluto)
-  - Verifica volumen real (no 0.00x)
+  - Excluir stablecoins (por lista + patrón USD/EUR)
+  - Filtrar NaN en ratio de volumen
+  - Descartar arranques en primeros 30 min
+  - Busca arranque en la segunda mitad
   - Verifica cambio positivo desde el arranque
+  - Mensaje Telegram agrupado por FUERZA (no por hora)
 """
 
+import math
 import os
 import sys
 from datetime import datetime, timezone, timedelta
@@ -39,13 +42,43 @@ CSV_URLS = {
     ),
 }
 
+
+# ============================================================
+# EXCLUSIONES — Stablecoins, wrapped, oro
+# ============================================================
+
 EXCLUIR = {
+    # Stablecoins USD
     "USDT", "USDC", "DAI", "TUSD", "FDUSD", "BUSD", "USDD", "USDE",
     "PYUSD", "USDS", "USD1", "RLUSD", "USD0", "USDSUI", "USDON",
-    "USDAI", "AUSD", "USDG", "USDGO", "USX", "EURC", "USDF", "GHO",
+    "USDAI", "AUSD", "USDG", "USDGO", "USX", "USDF", "GHO",
     "FRAX", "LUSD", "SUSD", "USDR", "USDY", "USTC", "MIM", "CRVUSD",
-    "PAXG", "XAUT", "WBTC", "WETH", "STETH", "WSTETH", "HTX",
+    "FRXUSD", "USDX", "USDP", "GUSD", "USDB", "USDA", "USDH",
+    "USDL", "USDM", "USDO", "USDQ", "USDT0", "XUSD", "DOLA",
+    "CUSD", "ALUSD", "MUSD", "BUCK", "VST", "USDI", "USDZ",
+    # Stablecoins EUR
+    "EURC", "EURS", "EURI", "EURT", "AGEUR", "STEUR",
+    # Oro y commodities
+    "PAXG", "XAUT", "KAU", "XAUM",
+    # Wrapped / staked
+    "WBTC", "WETH", "STETH", "WSTETH", "RETH", "CBETH", "WBETH",
+    "WBNB", "WMATIC", "WAVAX", "WSOL", "WFTM", "WONE", "WCRO",
+    "ANKRETH", "FRXETH", "SFRXETH", "EETH", "WEETH",
+    # Exchange internos
+    "HTX", "OKB",
 }
+
+
+def es_stablecoin(symbol):
+    """Detecta stablecoins por patrón (por si alguna nueva no está en EXCLUIR)."""
+    s = symbol.upper()
+    if s.startswith(("USD", "EUR")):
+        return True
+    if s.endswith(("USD", "EUR")):
+        return True
+    if "USD" in s and len(s) <= 8:
+        return True
+    return False
 
 
 # ============================================================
@@ -131,8 +164,12 @@ def detectar_oleadas(df, horas):
     arranques = []
 
     for symbol, g in rec.groupby("symbol"):
+        # ✅ FIX: excluir stablecoins
         if symbol.upper() in EXCLUIR:
             continue
+        if es_stablecoin(symbol):
+            continue
+
         g = g.sort_values("timestamp").reset_index(drop=True)
         if len(g) < MIN_SNAPSHOTS:
             continue
@@ -165,21 +202,30 @@ def detectar_oleadas(df, horas):
         ts_arr = g.loc[idx, "timestamp"]
         p_arr = g.loc[idx, "price"]
 
-        # FIX 3: Verificar volumen real (no 0.00x)
+        # FIX 3: Descartar si arranque en primeros 30 min
+        if (ts_arr - ts_min).total_seconds() < 1800:
+            continue
+
+        # FIX 4: Verificar volumen real (no 0.00x / NaN)
         if "volume_24h" not in g.columns:
             continue
         antes = g[g["timestamp"] < ts_arr]["volume_24h"].mean()
         despues = g[g["timestamp"] >= ts_arr]["volume_24h"].mean()
-        if not antes or antes <= 0:
+
+        if pd.isna(antes) or antes <= 0:
             continue
+        if pd.isna(despues):
+            continue
+
         ratio_vol = despues / antes if despues > 0 else 0
 
-        if ratio_vol < VOL_RATIO_MIN:
+        # ✅ FIX: descartar NaN y volumen bajo
+        if math.isnan(ratio_vol) or ratio_vol < VOL_RATIO_MIN:
             continue
 
         cambio_desde = ((p_fin - p_arr) / p_arr) * 100
 
-        # FIX 4: Verificar que el cambio desde arranque sea positivo
+        # FIX 5: Verificar cambio positivo desde arranque
         if cambio_desde < CAMBIO_MIN_DESDE_ARRANQUE:
             continue
 
@@ -209,8 +255,12 @@ def detectar_candidatas(rec, ya_arrancaron):
     for symbol, g in rec.groupby("symbol"):
         if symbol in ya_arrancaron:
             continue
+        # ✅ FIX: excluir stablecoins
         if symbol.upper() in EXCLUIR:
             continue
+        if es_stablecoin(symbol):
+            continue
+
         g = g.sort_values("timestamp").reset_index(drop=True)
         if len(g) < MIN_SNAPSHOTS:
             continue
@@ -222,17 +272,19 @@ def detectar_candidatas(rec, ya_arrancaron):
 
         cambio_24h = ((p_fin - p_ini) / p_ini) * 100
 
-        # Plano o ligeramente bajando (pero NO colapsando)
         if not (-8 <= cambio_24h <= 3):
             continue
 
         vol_prom = g["volume_24h"].mean() if "volume_24h" in g.columns else 0
         vol_ult = g["volume_24h"].iloc[-3:].mean() if "volume_24h" in g.columns else 0
-        if vol_prom <= 0:
+        if pd.isna(vol_prom) or vol_prom <= 0:
             continue
+        if pd.isna(vol_ult):
+            continue
+
         ratio_vol = vol_ult / vol_prom
 
-        if ratio_vol < 1.2:
+        if math.isnan(ratio_vol) or ratio_vol < 1.2:
             continue
         if vol_ult < 1_000_000:
             continue
@@ -252,7 +304,7 @@ def detectar_candidatas(rec, ya_arrancaron):
 
 
 # ============================================================
-# REPORTE
+# REPORTE (consola)
 # ============================================================
 
 def reportar(df, horas):
@@ -308,7 +360,7 @@ def reportar(df, horas):
 
 
 # ============================================================
-# TELEGRAM RESUMEN
+# TELEGRAM RESUMEN — NUEVO FORMATO AGRUPADO POR FUERZA
 # ============================================================
 
 def enviar_resumen_telegram(df, horas):
@@ -317,29 +369,65 @@ def enviar_resumen_telegram(df, horas):
     if arranques.empty:
         return
 
-    arranques["bloque"] = arranques["ts_arranque"].dt.floor("30min")
-
     ahora_lima = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%H:%M")
 
-    lineas = [f"🌊 OLEADAS (últimas {horas}h)"]
-    lineas.append(f"🕐 {ahora_lima} Lima")
-    lineas.append(f"━━━━━━━━━━━━━━━━━━━")
+    # Ordenar por volumen (mayor primero)
+    arranques_ord = arranques.sort_values("vol_ratio", ascending=False)
 
-    for bloque, grupo in arranques.groupby("bloque"):
-        hora_lima = (bloque - timedelta(hours=5)).strftime("%H:%M")
-        lineas.append(f"\n🌊 {hora_lima} Lima — {len(grupo)} monedas")
-        for _, r in grupo.head(5).iterrows():
-            lineas.append(f"  {r['symbol']} +{r['cambio_desde_arranque']:.1f}% "
-                          f"(vol {r['vol_ratio']:.2f}x)")
+    # Separar por fuerza
+    fuertes = arranques_ord[arranques_ord["vol_ratio"] >= 2.0]
+    medias = arranques_ord[
+        (arranques_ord["vol_ratio"] >= 1.2) &
+        (arranques_ord["vol_ratio"] < 2.0)
+    ]
+    suaves = arranques_ord[arranques_ord["vol_ratio"] < 1.2]
 
+    lineas = []
+    lineas.append(f"🌊 ARRANQUES {horas}H — {len(arranques)} monedas")
+    lineas.append("═══════════════════════")
+
+    # FUERTES (vol >= 2x)
+    if not fuertes.empty:
+        lineas.append(f"\n🔥 FUERTES (vol ≥2x)")
+        for _, r in fuertes.head(8).iterrows():
+            hora = (r["ts_arranque"] - timedelta(hours=5)).strftime("%H:%M")
+            lineas.append(
+                f"  {r['symbol']:<7} +{r['cambio_desde_arranque']:>4.1f}%  "
+                f"({r['vol_ratio']:.1f}x)  {hora}"
+            )
+
+    # MEDIAS (1.2x - 2x)
+    if not medias.empty:
+        lineas.append(f"\n⚡ MEDIAS (vol 1.2-2x)")
+        for _, r in medias.head(8).iterrows():
+            hora = (r["ts_arranque"] - timedelta(hours=5)).strftime("%H:%M")
+            lineas.append(
+                f"  {r['symbol']:<7} +{r['cambio_desde_arranque']:>4.1f}%  "
+                f"({r['vol_ratio']:.1f}x)  {hora}"
+            )
+
+    # SUAVES (solo mostrar algunos)
+    if not suaves.empty:
+        lineas.append(f"\n🟡 SUAVES ({len(suaves)})")
+        suaves_syms = ", ".join(suaves.head(5)["symbol"].tolist())
+        lineas.append(f"  {suaves_syms}")
+
+    # Candidatas
     ya_arrancaron = set(arranques["symbol"])
     candidatas = detectar_candidatas(rec, ya_arrancaron)
 
     if not candidatas.empty:
-        lineas.append(f"\n🎯 PRÓXIMA OLEADA:")
-        for _, r in candidatas.head(8).iterrows():
-            lineas.append(f"  {r['symbol']} 24h {r['cambio_24h']:+.1f}% "
-                          f"(vol {r['vol_ratio']:.2f}x)")
+        lineas.append(f"\n🎯 VIGILAR PRÓXIMA")
+        for _, r in candidatas.head(5).iterrows():
+            lineas.append(
+                f"  {r['symbol']:<7} vol {r['vol_ratio']:.1f}x  "
+                f"({r['cambio_24h']:+.1f}% 24h)"
+            )
+    else:
+        lineas.append(f"\n🎯 VIGILAR PRÓXIMA")
+        lineas.append(f"  (ninguna con volumen real)")
+
+    lineas.append(f"\n🕐 {ahora_lima} Lima")
 
     msg = "\n".join(lineas)
     if enviar_telegram(msg):
