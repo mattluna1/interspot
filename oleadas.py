@@ -360,12 +360,13 @@ def reportar(df, horas):
 
 
 # ============================================================
-# TELEGRAM RESUMEN — NUEVO FORMATO AGRUPADO POR FUERZA
+# TELEGRAM RESUMEN — SOLO CANDIDATAS
 # ============================================================
 
 def enviar_resumen_telegram(df, horas):
     rec, arranques = detectar_oleadas(df, horas)
     if arranques.empty:
+        print("\n🔇 Sin oleadas — sin envío")
         return
 
     ya_arrancaron = set(arranques["symbol"])
@@ -381,32 +382,17 @@ def enviar_resumen_telegram(df, horas):
     # Ordenar candidatas por volumen
     candidatas_ord = candidatas.sort_values("vol_ratio", ascending=False)
 
-    # Oleadas ordenadas por volumen
-    arranques_ord = arranques.sort_values("vol_ratio", ascending=False)
-
     lineas = []
-    
-    # ═══ PRIORIDAD 1: CANDIDATAS ═══
     lineas.append(f"🎯 PRÓXIMAS A ARRANCAR")
     lineas.append("═══════════════════════")
+
     for _, r in candidatas_ord.head(10).iterrows():
         lineas.append(
-            f"  {r['symbol']:<7} vol {r['vol_ratio']:.2f}x  "
-            f"${r['vol_actual_m']:.1f}M  ({r['cambio_24h']:+.1f}% 24h)"
+            f"  {r['symbol']:<8} vol {r['vol_ratio']:.2f}x  "
+            f"${r['vol_actual_m']:.1f}M  "
+            f"({r['cambio_24h']:+.1f}% 24h)  "
+            f"${r['precio']:.6f}"
         )
-
-    # ═══ PRIORIDAD 2: PASADAS (contexto breve) ═══
-    if not arranques_ord.empty:
-        lineas.append(f"\n📊 PASADAS 24H ({len(arranques)})")
-        for _, r in arranques_ord.head(6).iterrows():
-            emoji = "🔥" if r["vol_ratio"] >= 2 else "⚡" if r["vol_ratio"] >= 1.2 else "🟡"
-            hora = (r["ts_arranque"] - timedelta(hours=5)).strftime("%H:%M")
-            lineas.append(
-                f"  {emoji} {r['symbol']:<6} +{r['cambio_desde_arranque']:>4.1f}%  "
-                f"({r['vol_ratio']:.1f}x) {hora}"
-            )
-        if len(arranques) > 6:
-            lineas.append(f"  ... +{len(arranques)-6} más")
 
     lineas.append(f"\n🕐 {ahora_lima} Lima")
 
