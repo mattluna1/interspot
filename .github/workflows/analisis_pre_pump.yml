@@ -1,0 +1,33 @@
+name: ANALISIS PRE PUMP
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analisis-pre-pump
+  cancel-in-progress: false
+
+jobs:
+  analisis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pandas requests
+
+      - name: Run Analisis
+        run: python -u analisis_pre_pump.py
