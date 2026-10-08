@@ -3,6 +3,12 @@
 """
 DETECTOR DE OLEADAS — Corre en GitHub Actions
 Descarga CSV de los 3 recolectores y detecta la secuencia de oleadas.
+
+FIXES aplicados:
+  - Descarta monedas que no subieron en la ventana
+  - Busca arranque en la segunda mitad (no en el mínimo absoluto)
+  - Verifica volumen real (no 0.00x)
+  - Verifica cambio positivo desde el arranque
 """
 
 import os
@@ -47,8 +53,10 @@ EXCLUIR = {
 # ============================================================
 
 HORAS_VENTANA = 24
-UMBRAL_ARRANQUE = 3.0
+UMBRAL_ARRANQUE = 3.0       # % desde mínimo para considerar "arrancó"
 MIN_SNAPSHOTS = 8
+VOL_RATIO_MIN = 1.0         # mínimo volumen para considerar oleada real
+CAMBIO_MIN_DESDE_ARRANQUE = 1.0  # % mínimo desde arranque (filtra rebotes falsos)
 
 ENVIAR_TELEGRAM = os.getenv("OLEADAS_TELEGRAM", "0") == "1"
 
@@ -129,32 +137,59 @@ def detectar_oleadas(df, horas):
         if len(g) < MIN_SNAPSHOTS:
             continue
 
+        p_ini = g.iloc[0]["price"]
         p_min = g["price"].min()
-        if p_min <= 0:
+        p_fin = g.iloc[-1]["price"]
+        if p_ini <= 0 or p_min <= 0:
             continue
 
-        objetivo = p_min * (1 + UMBRAL_ARRANQUE / 100)
-        arranque = g[g["price"] >= objetivo]
+        # FIX 1: Descartar si NO subió en la ventana completa
+        cambio_total = ((p_fin - p_ini) / p_ini) * 100
+        if cambio_total < 0:
+            continue
 
+        # FIX 2: Buscar arranque en la SEGUNDA MITAD de la ventana
+        mitad = len(g) // 2
+        if mitad < 3:
+            continue
+        p_min_inicial = g[:mitad]["price"].min()
+        if p_min_inicial <= 0:
+            continue
+
+        objetivo = p_min_inicial * (1 + UMBRAL_ARRANQUE / 100)
+        arranque = g[g["price"] >= objetivo]
         if arranque.empty:
             continue
 
-        idx_arranque = arranque.index[0]
-        ts_arranque = g.loc[idx_arranque, "timestamp"]
-        p_arranque = g.loc[idx_arranque, "price"]
-        p_actual = g.iloc[-1]["price"]
-        cambio = ((p_actual - p_arranque) / p_arranque) * 100
+        idx = arranque.index[0]
+        ts_arr = g.loc[idx, "timestamp"]
+        p_arr = g.loc[idx, "price"]
 
-        antes = g[g["timestamp"] < ts_arranque]["volume_24h"].mean() if "volume_24h" in g.columns else 0
-        despues = g[g["timestamp"] >= ts_arranque]["volume_24h"].mean() if "volume_24h" in g.columns else 0
-        ratio_vol = despues / antes if antes and antes > 0 else 0
+        # FIX 3: Verificar volumen real (no 0.00x)
+        if "volume_24h" not in g.columns:
+            continue
+        antes = g[g["timestamp"] < ts_arr]["volume_24h"].mean()
+        despues = g[g["timestamp"] >= ts_arr]["volume_24h"].mean()
+        if not antes or antes <= 0:
+            continue
+        ratio_vol = despues / antes if despues > 0 else 0
+
+        if ratio_vol < VOL_RATIO_MIN:
+            continue
+
+        cambio_desde = ((p_fin - p_arr) / p_arr) * 100
+
+        # FIX 4: Verificar que el cambio desde arranque sea positivo
+        if cambio_desde < CAMBIO_MIN_DESDE_ARRANQUE:
+            continue
 
         arranques.append({
             "symbol": symbol,
-            "ts_arranque": ts_arranque,
-            "precio_arranque": p_arranque,
-            "precio_actual": p_actual,
-            "cambio_desde_arranque": cambio,
+            "ts_arranque": ts_arr,
+            "precio_arranque": p_arr,
+            "precio_actual": p_fin,
+            "cambio_desde_arranque": cambio_desde,
+            "cambio_total_ventana": cambio_total,
             "vol_ratio": ratio_vol,
         })
 
@@ -165,7 +200,7 @@ def detectar_oleadas(df, horas):
 
 
 # ============================================================
-# CANDIDATAS
+# CANDIDATAS (aún no arrancaron)
 # ============================================================
 
 def detectar_candidatas(rec, ya_arrancaron):
@@ -187,12 +222,15 @@ def detectar_candidatas(rec, ya_arrancaron):
 
         cambio_24h = ((p_fin - p_ini) / p_ini) * 100
 
+        # Plano o ligeramente bajando (pero NO colapsando)
         if not (-8 <= cambio_24h <= 3):
             continue
 
         vol_prom = g["volume_24h"].mean() if "volume_24h" in g.columns else 0
         vol_ult = g["volume_24h"].iloc[-3:].mean() if "volume_24h" in g.columns else 0
-        ratio_vol = vol_ult / vol_prom if vol_prom > 0 else 0
+        if vol_prom <= 0:
+            continue
+        ratio_vol = vol_ult / vol_prom
 
         if ratio_vol < 1.2:
             continue
@@ -238,11 +276,12 @@ def reportar(df, horas):
               f"({(bloque - timedelta(hours=5)).strftime('%H:%M')} Lima) — "
               f"{len(grupo)} monedas")
         print("-" * 78)
-        print(f"{'SYMBOL':<10} {'ARRANQUE':<20} {'CAMBIO':>8} {'VOL':>7} {'PRECIO ACT':>14}")
+        print(f"{'SYMBOL':<10} {'ARRANQUE':<10} {'CAMBIO':>8} {'TOTAL':>8} {'VOL':>7} {'PRECIO ACT':>14}")
         for _, r in grupo.iterrows():
             print(f"{r['symbol']:<10} "
-                  f"{r['ts_arranque'].strftime('%H:%M:%S'):<20} "
+                  f"{r['ts_arranque'].strftime('%H:%M:%S'):<10} "
                   f"{r['cambio_desde_arranque']:>+7.2f}% "
+                  f"{r['cambio_total_ventana']:>+7.2f}% "
                   f"{r['vol_ratio']:>6.2f}x "
                   f"${r['precio_actual']:>12.6f}")
 
