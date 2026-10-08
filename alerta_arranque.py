@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALERTA ARRANQUE + REENTRADA — 3 SEÑALES + BTC CONTEXTO
-  1. 🟡 TEMPRANA  → arranque con volumen empezando a entrar (1.2x+)
-  2. 🚨 FUERTE    → arranque confirmado con volumen (1.4x+)
-  3. 📐 REENTRADA → rebote en Fibo 61.8% tras pullback
+ALERTA ARRANQUE + REENTRADA — 3 SEÑALES + BTC 6 ESTADOS
+  1. 🟡 TEMPRANA  → arranque con volumen empezando (1.2x+)
+  2. 🚨 FUERTE    → arranque confirmado (1.4x+)
+  3. 📐 REENTRADA → rebote en Fibo 61.8%
+  
+BTC análisis (6 estados):
+  - 🟢 UP        → subiendo sostenido
+  - ⚪ FLAT      → plano
+  - 🟡 DOWN_SOFT → cayendo suave
+  - 🔴 DOWN      → cayendo fuerte
+  - 🟣 BOTTOM    → fondo detectado (preparar)
+  - 🟢 RECOVERY  → rebote tras caída (mejor momento)
 
-BTC se muestra como CONTEXTO (no bloquea alertas):
-  - 🟢 favorable / ⚪ neutral / 🟡 cuidado / 🔴 peligro
+Aviso especial cuando BTC CAMBIA de estado.
 """
 
+import json
 import os
 import sys
 from datetime import datetime, timezone, timedelta
@@ -87,6 +95,9 @@ RANK_MAX            = 280
 
 MAX_POR_TIPO        = 10
 
+# Archivo de estado BTC (persistente)
+BTC_STATE_FILE      = "btc_state.json"
+
 
 # ============================================================
 # TELEGRAM
@@ -161,17 +172,18 @@ def cumple_calidad(mc, rank):
 
 
 # ============================================================
-# ANÁLISIS BTC — CONTEXTO (no bloquea)
+# ANÁLISIS BTC — 6 ESTADOS
 # ============================================================
 
 def analizar_btc(df):
     """
-    Analiza BTC como contexto.
-    Retorna estado: 'UP' | 'FLAT' | 'DOWN_SOFT' | 'DOWN' | 'UNKNOWN'
+    Analiza BTC y clasifica en 6 estados:
+      UP / FLAT / DOWN_SOFT / DOWN / BOTTOM / RECOVERY
     """
     g = df[df["symbol"] == "BTC"].sort_values("timestamp")
     if len(g) < 40:
-        return {"estado": "UNKNOWN", "cambio_1h": 0, "cambio_4h": 0, "vol_ratio": 0}
+        return {"estado": "UNKNOWN", "cambio_1h": 0, "cambio_4h": 0,
+                "cambio_24h": 0, "vol_ratio": 0, "precio": 0}
 
     ts_max = g["timestamp"].max()
 
@@ -179,7 +191,8 @@ def analizar_btc(df):
     corte_1h = ts_max - timedelta(hours=1)
     rec_1h = g[g["timestamp"] >= corte_1h]
     if len(rec_1h) < 3:
-        return {"estado": "UNKNOWN", "cambio_1h": 0, "cambio_4h": 0, "vol_ratio": 0}
+        return {"estado": "UNKNOWN", "cambio_1h": 0, "cambio_4h": 0,
+                "cambio_24h": 0, "vol_ratio": 0, "precio": 0}
 
     p_ini_1h = rec_1h.iloc[0]["price"]
     p_fin = g.iloc[-1]["price"]
@@ -191,18 +204,44 @@ def analizar_btc(df):
     p_ini_4h = rec_4h.iloc[0]["price"] if len(rec_4h) > 0 else p_ini_1h
     cambio_4h = ((p_fin - p_ini_4h) / p_ini_4h) * 100 if p_ini_4h > 0 else 0
 
+    # Ventana 24h
+    corte_24h = ts_max - timedelta(hours=24)
+    rec_24h = g[g["timestamp"] >= corte_24h]
+    p_ini_24h = rec_24h.iloc[0]["price"] if len(rec_24h) > 0 else p_ini_4h
+    cambio_24h = ((p_fin - p_ini_24h) / p_ini_24h) * 100 if p_ini_24h > 0 else 0
+
     # Volumen
     v_base = g["volume_24h"].tail(20).mean()
     v_ult = g["volume_24h"].iloc[-1]
     vol_ratio = v_ult / v_base if v_base > 0 else 0
 
-    # Clasificación
-    if cambio_1h > 1.0 and cambio_4h > 1.0:
-        estado = "UP"
+    # Mínimo de las últimas 4h (para detectar "fondo")
+    p_min_4h = rec_4h["price"].min() if len(rec_4h) > 0 else p_fin
+    pos_respecto_min = ((p_fin - p_min_4h) / p_min_4h) * 100 if p_min_4h > 0 else 0
+
+    # === CLASIFICACIÓN DE 6 ESTADOS ===
+
+    # RECOVERY: BTC rebotando tras caída
+    if cambio_1h > 0.3 and cambio_4h < -0.5 and pos_respecto_min > 1.0:
+        estado = "RECOVERY"
+
+    # BOTTOM: BTC dejó de caer (plano tras caída)
+    elif -0.3 < cambio_1h < 0.4 and cambio_4h < -1.0:
+        estado = "BOTTOM"
+
+    # DOWN: BTC cayendo fuerte
     elif cambio_1h < -1.5 or cambio_4h < -3.0:
         estado = "DOWN"
+
+    # DOWN_SOFT: BTC cayendo suave
     elif cambio_1h < -0.5:
         estado = "DOWN_SOFT"
+
+    # UP: BTC subiendo sostenido
+    elif cambio_1h > 0.5 and cambio_4h > 0.5:
+        estado = "UP"
+
+    # FLAT: plano
     else:
         estado = "FLAT"
 
@@ -210,27 +249,114 @@ def analizar_btc(df):
         "estado": estado,
         "cambio_1h": cambio_1h,
         "cambio_4h": cambio_4h,
+        "cambio_24h": cambio_24h,
         "vol_ratio": vol_ratio,
         "precio": p_fin,
+        "p_min_4h": p_min_4h,
+        "pos_respecto_min": pos_respecto_min,
     }
 
 
 def _contexto_btc(btc):
-    """
-    Retorna (linea, aviso) en lenguaje humano.
-    linea: '🟢 BTC: favorable'
-    aviso: advertencia adicional (puede ser "")
-    """
+    """Retorna (linea, aviso) con los 6 estados."""
     mapa = {
-        "UP":        ("🟢 BTC: favorable", ""),
+        "UP":        ("🟢 BTC: subiendo", ""),
         "FLAT":      ("⚪ BTC: neutral", ""),
-        "DOWN_SOFT": ("🟡 BTC: cuidado",
-                      "⚠️ Mercado bajando — ojo con alts"),
-        "DOWN":      ("🔴 BTC: peligro",
-                      "🚨 BTC cayendo fuerte — verifica gráfico antes de entrar"),
+        "DOWN_SOFT": ("🟡 BTC: bajando suave",
+                      "⚠️ Mercado flojo — sé selectivo"),
+        "DOWN":      ("🔴 BTC: cayendo fuerte",
+                      "🚨 BTC en caída — no entrar a alts"),
+        "BOTTOM":    ("🟣 BTC: fondo — dejó de caer",
+                      "⏳ Preparar entradas, esperar confirmación"),
+        "RECOVERY":  ("🟢 BTC: recovery — rebotando",
+                      "🔥 Momento óptimo para entrar a alts"),
         "UNKNOWN":   ("❓ BTC: sin datos", ""),
     }
     return mapa.get(btc["estado"], ("⚪ BTC: neutral", ""))
+
+
+# ============================================================
+# DETECCIÓN DE CAMBIO DE ESTADO BTC
+# ============================================================
+
+def cargar_btc_estado_previo():
+    """Carga el último estado guardado de BTC."""
+    if not os.path.exists(BTC_STATE_FILE):
+        return None
+    try:
+        with open(BTC_STATE_FILE, "r") as f:
+            data = json.load(f)
+        return data.get("estado")
+    except Exception:
+        return None
+
+
+def guardar_btc_estado(estado):
+    """Guarda el estado actual de BTC."""
+    try:
+        with open(BTC_STATE_FILE, "w") as f:
+            json.dump({
+                "estado": estado,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }, f)
+    except Exception:
+        pass
+
+
+def enviar_alerta_cambio_btc(estado_previo, btc):
+    """Envía alerta a Telegram SOLO si BTC cambió a un estado importante."""
+    if estado_previo == btc["estado"]:
+        return False
+
+    # Transiciones importantes (solo estas se notifican)
+    transiciones = {
+        ("UP", "FLAT"):          ("🟡", "BTC PERDIENDO FUERZA",
+                                  "Toma ganancias, mercado girando"),
+        ("UP", "DOWN_SOFT"):     ("🟡", "BTC GIRANDO A LA BAJA",
+                                  "Cuidado con alts"),
+        ("UP", "DOWN"):          ("🔴", "BTC GIRÓ A LA BAJA",
+                                  "🚨 NO ENTRAR A ALTS"),
+        ("FLAT", "DOWN_SOFT"):   ("🟡", "BTC EMPIEZA A CAER",
+                                  "Cuidado con alts"),
+        ("FLAT", "DOWN"):        ("🔴", "BTC CAYENDO FUERTE",
+                                  "🚨 NO ENTRAR A ALTS"),
+        ("DOWN_SOFT", "DOWN"):   ("🔴", "BTC CAYENDO FUERTE",
+                                  "🚨 NO ENTRAR A ALTS"),
+        ("DOWN", "BOTTOM"):      ("🟣", "BTC TOCA FONDO",
+                                  "⏳ Preparar entradas en alts"),
+        ("DOWN_SOFT", "BOTTOM"): ("🟣", "BTC TOCA FONDO",
+                                  "⏳ Preparar entradas en alts"),
+        ("DOWN", "RECOVERY"):    ("🟢", "BTC REBOTA",
+                                  "🔥 MOMENTO ÓPTIMO — entradas en alts"),
+        ("BOTTOM", "RECOVERY"):  ("🟢", "BTC REBOTA",
+                                  "🔥 MOMENTO ÓPTIMO — entradas en alts"),
+        ("BOTTOM", "UP"):        ("🟢", "BTC CONFIRMA SUBIDA",
+                                  "🟢 Buen momento para alts"),
+        ("RECOVERY", "UP"):      ("🟢", "BTC CONFIRMA SUBIDA",
+                                  "🟢 Buen momento para alts"),
+        ("RECOVERY", "DOWN"):    ("🔴", "BTC RECAÓ",
+                                  "🚨 Rebote fallido — no entrar"),
+    }
+
+    clave = (estado_previo, btc["estado"])
+    if clave not in transiciones:
+        return False
+
+    emoji, titulo, accion = transiciones[clave]
+    hora_lima = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%H:%M")
+
+    msg = (
+        f"{emoji} {titulo}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 BTC: ${btc['precio']:,.2f}\n"
+        f"📊 1h: {btc['cambio_1h']:+.2f}% | 4h: {btc['cambio_4h']:+.2f}%\n"
+        f"📊 24h: {btc['cambio_24h']:+.2f}% | Vol: {btc['vol_ratio']:.2f}x\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"{accion}\n"
+        f"🕐 {hora_lima} Lima"
+    )
+
+    return enviar_telegram(msg)
 
 
 # ============================================================
@@ -405,7 +531,7 @@ def detectar_reentrada_fibo(df, symbol):
 
 
 # ============================================================
-# ENVÍO DE MENSAJES (con contexto BTC)
+# ENVÍO DE MENSAJES
 # ============================================================
 
 def enviar_alerta_arranque(a, btc):
@@ -482,7 +608,7 @@ def main():
     ahora_lima = ahora - timedelta(hours=5)
 
     print(f"\n{'='*70}")
-    print(f"⚡ ARRANQUE + 📐 REENTRADA — BTC CONTEXTO")
+    print(f"⚡ ARRANQUE + 📐 REENTRADA — BTC 6 ESTADOS")
     print(f"   UTC:  {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"   Lima: {ahora_lima.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*70}")
@@ -490,7 +616,7 @@ def main():
     df = cargar_datos()
     print(f"📊 Total: {len(df):,} filas | {df['symbol'].nunique()} monedas")
 
-    # === ANÁLISIS BTC (solo contexto, no bloquea) ===
+    # === ANÁLISIS BTC ===
     btc = analizar_btc(df)
     linea_btc, aviso_btc = _contexto_btc(btc)
 
@@ -499,7 +625,15 @@ def main():
     if aviso_btc:
         print(f"   {aviso_btc}")
 
-    # Escanear monedas
+    # === AVISO DE CAMBIO DE ESTADO BTC ===
+    estado_previo = cargar_btc_estado_previo()
+    if estado_previo and estado_previo != btc["estado"]:
+        print(f"\n🔄 Cambio BTC: {estado_previo} → {btc['estado']}")
+        if enviar_alerta_cambio_btc(estado_previo, btc):
+            print(f"   📱 Alerta de cambio BTC enviada")
+    guardar_btc_estado(btc["estado"])
+
+    # === ESCANEO ===
     todas = df["symbol"].unique()
     print(f"\n🔍 Escaneando {len(todas)} monedas...")
 
@@ -526,10 +660,9 @@ def main():
     print(f"   🟡 TEMPRANAS:  {len(tempranas)}")
     print(f"   📐 REENTRADAS: {len(reentradas)}")
 
-    # === ENVÍO — TODAS las alertas se envían con contexto BTC ===
+    # === ENVÍO ===
     enviadas = 0
 
-    # 1) FUERTES
     fuertes.sort(key=lambda x: -x["cambio_1h"])
     for a in fuertes[:MAX_POR_TIPO]:
         if enviar_alerta_arranque(a, btc):
@@ -537,7 +670,6 @@ def main():
             print(f"   🚨 FUERTE: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
                   f"vol {a['vol_ratio']:.2f}x)")
 
-    # 2) TEMPRANAS
     tempranas.sort(key=lambda x: -x["cambio_1h"])
     for a in tempranas[:MAX_POR_TIPO]:
         if enviar_alerta_arranque(a, btc):
@@ -545,7 +677,6 @@ def main():
             print(f"   🟡 TEMPRANA: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
                   f"vol {a['vol_ratio']:.2f}x)")
 
-    # 3) REENTRADAS
     reentradas.sort(key=lambda x: (x["distancia_fibo"], -x["vol_ratio"]))
     for a in reentradas[:MAX_POR_TIPO]:
         if enviar_alerta_reentrada(a, btc):
