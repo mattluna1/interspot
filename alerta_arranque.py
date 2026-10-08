@@ -8,16 +8,19 @@ ALERTA ARRANQUE + REENTRADA — 3 SEÑALES + BTC 6 ESTADOS
 
 BTC análisis (6 estados):
   - 🟢 UP        → subiendo sostenido
-  - ⚪ FLAT      → plano
-  - 🟡 DOWN_SOFT → cayendo suave
+  - ⚪ FLAT      → plano real (sin tendencia)
+  - 🟡 DOWN_SOFT → cayendo (lento o suave)
   - 🔴 DOWN      → cayendo fuerte
-  - 🟣 BOTTOM    → fondo detectado (preparar)
-  - 🟢 RECOVERY  → rebote tras caída (mejor momento)
+  - 🟣 BOTTOM    → fondo REAL (requiere rebote)
+  - 🟢 RECOVERY  → rebote confirmado tras caída
 
 Bloqueo gradual por BTC:
   🔴 DOWN      → bloquea TODAS las alertas
-  🟡 DOWN_SOFT → bloquea TEMPRANAS y REENTRADAS (permite FUERTES)
-  Otros        → permite todas
+  🟡 DOWN_SOFT → bloquea TODAS (caída lenta = no entrar)
+  🟣 BOTTOM    → permite (rebote real)
+  🟢 RECOVERY  → permite (momento óptimo)
+  ⚪ FLAT      → permite
+  🟢 UP        → permite
 
 Aviso especial cuando BTC CAMBIA de estado.
 """
@@ -177,13 +180,18 @@ def cumple_calidad(mc, rank):
 
 
 # ============================================================
-# ANÁLISIS BTC — 6 ESTADOS
+# ANÁLISIS BTC — 6 ESTADOS (VERSIÓN MEJORADA)
 # ============================================================
 
 def analizar_btc(df):
     """
     Analiza BTC y clasifica en 6 estados:
       UP / FLAT / DOWN_SOFT / DOWN / BOTTOM / RECOVERY
+
+    Reglas clave:
+      - BOTTOM requiere REBOTE real (cambio_1h > +0.2%), no solo estar plano
+      - DOWN_SOFT captura cualquier caída lenta (cambio_1h < -0.2%)
+      - FLAT solo cuando BTC está realmente plano
     """
     g = df[df["symbol"] == "BTC"].sort_values("timestamp")
     if len(g) < 40:
@@ -224,29 +232,39 @@ def analizar_btc(df):
     p_min_4h = rec_4h["price"].min() if len(rec_4h) > 0 else p_fin
     pos_respecto_min = ((p_fin - p_min_4h) / p_min_4h) * 100 if p_min_4h > 0 else 0
 
-    # === CLASIFICACIÓN DE 6 ESTADOS ===
+    # ═══════════════════════════════════════════════════════════
+    # CLASIFICACIÓN DE 6 ESTADOS (MEJORADA)
+    # ═══════════════════════════════════════════════════════════
 
-    # RECOVERY: BTC rebotando tras caída
-    if cambio_1h > 0.3 and cambio_4h < -0.5 and pos_respecto_min > 1.0:
+    # 🟢 RECOVERY: BTC rebotando claramente tras caída
+    # Requiere: subida +0.5% en 1h Y al menos +1.5% arriba del mínimo
+    if (cambio_1h > 0.5 and
+        cambio_4h < -1.0 and
+        pos_respecto_min > 1.5):
         estado = "RECOVERY"
 
-    # BOTTOM: BTC dejó de caer (plano tras caída)
-    elif -0.3 < cambio_1h < 0.4 and cambio_4h < -1.0:
+    # 🟣 BOTTOM: BTC dejó de caer Y muestra REBOTE REAL
+    # Requiere: subida +0.2% en 1h Y al menos +0.8% arriba del mínimo
+    # (antes era "plano" y daba falsos positivos)
+    elif (cambio_1h > 0.2 and
+          cambio_4h < -1.0 and
+          pos_respecto_min > 0.8):
         estado = "BOTTOM"
 
-    # DOWN: BTC cayendo fuerte
+    # 🔴 DOWN: BTC cayendo fuerte
     elif cambio_1h < -1.5 or cambio_4h < -3.0:
         estado = "DOWN"
 
-    # DOWN_SOFT: BTC cayendo suave
-    elif cambio_1h < -0.5:
+    # 🟡 DOWN_SOFT: BTC cayendo lento o suave (cualquier caída)
+    # (antes necesitaba -0.5%, ahora -0.2% para capturar caídas lentas)
+    elif cambio_1h < -0.2:
         estado = "DOWN_SOFT"
 
-    # UP: BTC subiendo sostenido
+    # 🟢 UP: BTC subiendo sostenido
     elif cambio_1h > 0.5 and cambio_4h > 0.5:
         estado = "UP"
 
-    # FLAT: plano
+    # ⚪ FLAT: plano real (entre -0.2% y +0.2%)
     else:
         estado = "FLAT"
 
@@ -267,13 +285,13 @@ def _contexto_btc(btc):
     mapa = {
         "UP":        ("🟢 BTC: subiendo", ""),
         "FLAT":      ("⚪ BTC: neutral", ""),
-        "DOWN_SOFT": ("🟡 BTC: bajando suave",
-                      "⚠️ Mercado flojo — sé selectivo"),
+        "DOWN_SOFT": ("🟡 BTC: cayendo lento",
+                      "⏸️ BTC bajando — esperar suelo"),
         "DOWN":      ("🔴 BTC: cayendo fuerte",
                       "🚨 BTC en caída — no entrar a alts"),
-        "BOTTOM":    ("🟣 BTC: fondo — dejó de caer",
-                      "⏳ Preparar entradas, esperar confirmación"),
-        "RECOVERY":  ("🟢 BTC: recovery — rebotando",
+        "BOTTOM":    ("🟣 BTC: fondo — rebotando",
+                      "🎯 BTC muestra rebote — preparar entradas"),
+        "RECOVERY":  ("🟢 BTC: recovery — rebote confirmado",
                       "🔥 Momento óptimo para entrar a alts"),
         "UNKNOWN":   ("❓ BTC: sin datos", ""),
     }
@@ -313,7 +331,6 @@ def enviar_alerta_cambio_btc(estado_previo, btc):
     if estado_previo == btc["estado"]:
         return False
 
-    # Transiciones importantes (solo estas se notifican)
     transiciones = {
         ("UP", "FLAT"):          ("🟡", "BTC PERDIENDO FUERZA",
                                   "Toma ganancias, mercado girando"),
@@ -341,6 +358,8 @@ def enviar_alerta_cambio_btc(estado_previo, btc):
                                   "🟢 Buen momento para alts"),
         ("RECOVERY", "DOWN"):    ("🔴", "BTC RECAÓ",
                                   "🚨 Rebote fallido — no entrar"),
+        ("BOTTOM", "DOWN_SOFT"): ("🟡", "BTC FALSO FONDO",
+                                  "⚠️ Rebote fallido — volvió a caer"),
     }
 
     clave = (estado_previo, btc["estado"])
@@ -382,7 +401,6 @@ def detectar_arranque(df, symbol):
     if not cumple_calidad(mc, rank):
         return None
 
-    # Ventana 1h
     corte_1h = ts_max - timedelta(hours=1)
     rec_1h = g[g["timestamp"] >= corte_1h]
     if len(rec_1h) < 3:
@@ -393,7 +411,6 @@ def detectar_arranque(df, symbol):
         return None
     cambio_1h = ((p_fin - p_ini_1h) / p_ini_1h) * 100
 
-    # Ventana 4h
     corte_4h = ts_max - timedelta(hours=4)
     rec_4h = g[g["timestamp"] >= corte_4h]
     if len(rec_4h) < 6:
@@ -401,26 +418,22 @@ def detectar_arranque(df, symbol):
     p_ini_4h = rec_4h.iloc[0]["price"]
     cambio_4h = ((p_fin - p_ini_4h) / p_ini_4h) * 100 if p_ini_4h > 0 else 0
 
-    # Ventana 24h
     corte_24h = ts_max - timedelta(hours=24)
     rec_24h = g[g["timestamp"] >= corte_24h]
     p_ini_24h = rec_24h.iloc[0]["price"] if len(rec_24h) > 0 else p_ini_4h
     cambio_24h = ((p_fin - p_ini_24h) / p_ini_24h) * 100 if p_ini_24h > 0 else 0
 
-    # Frescura
     if cambio_4h > MAX_CAMBIO_4H:
         return None
     if cambio_24h > MAX_CAMBIO_24H:
         return None
 
-    # Volumen
     v_base = g["volume_24h"].tail(20).mean()
     v_ult = g["volume_24h"].iloc[-1]
     vol_ratio = v_ult / v_base if v_base > 0 else 0
     if v_ult < VOL_ABS_MIN:
         return None
 
-    # Clasificación
     señal = None
     if cambio_1h >= FUERTE_CAMBIO_1H and vol_ratio >= FUERTE_VOL_MIN:
         señal = "FUERTE"
@@ -666,20 +679,24 @@ def main():
     print(f"   📐 REENTRADAS: {len(reentradas)}")
 
     # ═══════════════════════════════════════════════════════════
-    # ✅ NUEVO: BLOQUEO GRADUAL SEGÚN BTC
+    # BLOQUEO GRADUAL SEGÚN BTC
     # ═══════════════════════════════════════════════════════════
     enviadas = 0
     btc_estado = btc.get("estado", "FLAT")
 
-    # Reglas de bloqueo
-    bloquear_tempranas = btc_estado in ("DOWN", "DOWN_SOFT")
-    bloquear_fuertes   = btc_estado == "DOWN"
-    bloquear_reentradas = btc_estado in ("DOWN", "DOWN_SOFT")
+    # Reglas de bloqueo (más estrictas con caídas lentas)
+    bloquear_todas = btc_estado in ("DOWN", "DOWN_SOFT")
+    bloquear_tempranas = bloquear_todas
+    bloquear_fuertes = bloquear_todas
+    bloquear_reentradas = bloquear_todas
 
     print(f"\n📋 Política BTC {btc_estado}:")
-    print(f"   TEMPRANAS:  {'🚫 bloqueadas' if bloquear_tempranas else '✅ permitidas'}")
-    print(f"   FUERTES:    {'🚫 bloqueadas' if bloquear_fuertes else '✅ permitidas'}")
-    print(f"   REENTRADAS: {'🚫 bloqueadas' if bloquear_reentradas else '✅ permitidas'}")
+    if bloquear_todas:
+        print(f"   🚫 BLOQUEO TOTAL — BTC bajando (alts siguen a BTC)")
+    else:
+        print(f"   TEMPRANAS:  {'🚫 bloqueadas' if bloquear_tempranas else '✅ permitidas'}")
+        print(f"   FUERTES:    {'🚫 bloqueadas' if bloquear_fuertes else '✅ permitidas'}")
+        print(f"   REENTRADAS: {'🚫 bloqueadas' if bloquear_reentradas else '✅ permitidas'}")
 
     # ─── FUERTES ───
     if not bloquear_fuertes:
@@ -690,7 +707,7 @@ def main():
                 print(f"   🚨 FUERTE: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
                       f"vol {a['vol_ratio']:.2f}x)")
     elif fuertes:
-        print(f"\n   ⏸️ {len(fuertes)} FUERTES bloqueadas por BTC {btc_estado}")
+        print(f"   ⏸️ {len(fuertes)} FUERTES bloqueadas por BTC {btc_estado}")
 
     # ─── TEMPRANAS ───
     if not bloquear_tempranas:
