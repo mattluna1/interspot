@@ -1,28 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALERTA ARRANQUE + REENTRADA — 3 SEÑALES + BTC 6 ESTADOS
+ALERTA ARRANQUE + REENTRADA — 3 SEÑALES + BTC 6 ESTADOS + DEDUPLICACIÓN
+
   1. 🟡 TEMPRANA  → arranque con volumen empezando (1.2x+)
   2. 🚨 FUERTE    → arranque confirmado (1.4x+)
   3. 📐 REENTRADA → rebote en Fibo 61.8%
 
-BTC análisis (6 estados):
-  - 🟢 UP        → subiendo sostenido
-  - ⚪ FLAT      → plano real (sin tendencia)
-  - 🟡 DOWN_SOFT → cayendo (lento o suave)
-  - 🔴 DOWN      → cayendo fuerte
-  - 🟣 BOTTOM    → fondo REAL (requiere rebote)
-  - 🟢 RECOVERY  → rebote confirmado tras caída
-
-Bloqueo gradual por BTC:
-  🔴 DOWN      → bloquea TODAS las alertas
-  🟡 DOWN_SOFT → bloquea TODAS (caída lenta = no entrar)
-  🟣 BOTTOM    → permite (rebote real)
-  🟢 RECOVERY  → permite (momento óptimo)
-  ⚪ FLAT      → permite
-  🟢 UP        → permite
-
-Aviso especial cuando BTC CAMBIA de estado.
+NUEVO: Deduplicación por moneda
+  - Solo UNA alerta por moneda cada COOLDOWN_HORAS
+  - Prioriza FUERTE > TEMPRANA > REENTRADA
+  - Persiste en data/alertas_recientes.json
 """
 
 import json
@@ -103,8 +91,10 @@ RANK_MAX            = 280
 
 MAX_POR_TIPO        = 10
 
-# Archivo de estado BTC (persistente)
+# Archivos de estado persistente
 BTC_STATE_FILE      = "btc_state.json"
+ALERTAS_FILE        = "data/alertas_recientes.json"
+COOLDOWN_HORAS      = 4
 
 
 # ============================================================
@@ -180,18 +170,50 @@ def cumple_calidad(mc, rank):
 
 
 # ============================================================
-# ANÁLISIS BTC — 6 ESTADOS (VERSIÓN MEJORADA)
+# DEDUPLICACIÓN — ALERTAS RECIENTES
+# ============================================================
+
+def cargar_alertas_recientes():
+    """Carga el registro de alertas recientes (con limpieza por cooldown)."""
+    if not os.path.exists(ALERTAS_FILE):
+        return {}
+    try:
+        with open(ALERTAS_FILE, "r") as f:
+            data = json.load(f)
+        # Limpiar alertas viejas (>COOLDOWN_HORAS)
+        ahora = datetime.now(timezone.utc).timestamp()
+        data = {k: v for k, v in data.items()
+                if (ahora - v) / 3600 < COOLDOWN_HORAS}
+        return data
+    except Exception:
+        return {}
+
+
+def guardar_alertas_recientes(alertas):
+    """Guarda el registro de alertas recientes."""
+    os.makedirs(os.path.dirname(ALERTAS_FILE), exist_ok=True)
+    with open(ALERTAS_FILE, "w") as f:
+        json.dump(alertas, f, indent=2)
+
+
+def ya_avisado(symbol, alertas_recientes):
+    """Comprueba si ya avisamos de esta moneda recientemente."""
+    return symbol.upper() in alertas_recientes
+
+
+def marcar_avisado(symbol, alertas_recientes):
+    """Marca la moneda como avisada."""
+    alertas_recientes[symbol.upper()] = datetime.now(timezone.utc).timestamp()
+
+
+# ============================================================
+# ANÁLISIS BTC — 6 ESTADOS
 # ============================================================
 
 def analizar_btc(df):
     """
     Analiza BTC y clasifica en 6 estados:
       UP / FLAT / DOWN_SOFT / DOWN / BOTTOM / RECOVERY
-
-    Reglas clave:
-      - BOTTOM requiere REBOTE real (cambio_1h > +0.2%), no solo estar plano
-      - DOWN_SOFT captura cualquier caída lenta (cambio_1h < -0.2%)
-      - FLAT solo cuando BTC está realmente plano
     """
     g = df[df["symbol"] == "BTC"].sort_values("timestamp")
     if len(g) < 40:
@@ -228,43 +250,37 @@ def analizar_btc(df):
     v_ult = g["volume_24h"].iloc[-1]
     vol_ratio = v_ult / v_base if v_base > 0 else 0
 
-    # Mínimo de las últimas 4h (para detectar "fondo")
+    # Mínimo de las últimas 4h
     p_min_4h = rec_4h["price"].min() if len(rec_4h) > 0 else p_fin
     pos_respecto_min = ((p_fin - p_min_4h) / p_min_4h) * 100 if p_min_4h > 0 else 0
 
-    # ═══════════════════════════════════════════════════════════
-    # CLASIFICACIÓN DE 6 ESTADOS (MEJORADA)
-    # ═══════════════════════════════════════════════════════════
+    # === CLASIFICACIÓN DE 6 ESTADOS ===
 
-    # 🟢 RECOVERY: BTC rebotando claramente tras caída
-    # Requiere: subida +0.5% en 1h Y al menos +1.5% arriba del mínimo
+    # RECOVERY
     if (cambio_1h > 0.5 and
         cambio_4h < -1.0 and
         pos_respecto_min > 1.5):
         estado = "RECOVERY"
 
-    # 🟣 BOTTOM: BTC dejó de caer Y muestra REBOTE REAL
-    # Requiere: subida +0.2% en 1h Y al menos +0.8% arriba del mínimo
-    # (antes era "plano" y daba falsos positivos)
+    # BOTTOM
     elif (cambio_1h > 0.2 and
           cambio_4h < -1.0 and
           pos_respecto_min > 0.8):
         estado = "BOTTOM"
 
-    # 🔴 DOWN: BTC cayendo fuerte
+    # DOWN
     elif cambio_1h < -1.5 or cambio_4h < -3.0:
         estado = "DOWN"
 
-    # 🟡 DOWN_SOFT: BTC cayendo lento o suave (cualquier caída)
-    # (antes necesitaba -0.5%, ahora -0.2% para capturar caídas lentas)
+    # DOWN_SOFT
     elif cambio_1h < -0.2:
         estado = "DOWN_SOFT"
 
-    # 🟢 UP: BTC subiendo sostenido
+    # UP
     elif cambio_1h > 0.5 and cambio_4h > 0.5:
         estado = "UP"
 
-    # ⚪ FLAT: plano real (entre -0.2% y +0.2%)
+    # FLAT
     else:
         estado = "FLAT"
 
@@ -299,11 +315,10 @@ def _contexto_btc(btc):
 
 
 # ============================================================
-# DETECCIÓN DE CAMBIO DE ESTADO BTC
+# CAMBIO DE ESTADO BTC
 # ============================================================
 
 def cargar_btc_estado_previo():
-    """Carga el último estado guardado de BTC."""
     if not os.path.exists(BTC_STATE_FILE):
         return None
     try:
@@ -315,7 +330,6 @@ def cargar_btc_estado_previo():
 
 
 def guardar_btc_estado(estado):
-    """Guarda el estado actual de BTC."""
     try:
         with open(BTC_STATE_FILE, "w") as f:
             json.dump({
@@ -327,7 +341,6 @@ def guardar_btc_estado(estado):
 
 
 def enviar_alerta_cambio_btc(estado_previo, btc):
-    """Envía alerta a Telegram SOLO si BTC cambió a un estado importante."""
     if estado_previo == btc["estado"]:
         return False
 
@@ -626,7 +639,7 @@ def main():
     ahora_lima = ahora - timedelta(hours=5)
 
     print(f"\n{'='*70}")
-    print(f"⚡ ARRANQUE + 📐 REENTRADA — BTC 6 ESTADOS")
+    print(f"⚡ ARRANQUE + 📐 REENTRADA — BTC 6 ESTADOS + DEDUPLICACIÓN")
     print(f"   UTC:  {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"   Lima: {ahora_lima.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*70}")
@@ -681,69 +694,66 @@ def main():
     # ═══════════════════════════════════════════════════════════
     # BLOQUEO GRADUAL SEGÚN BTC
     # ═══════════════════════════════════════════════════════════
-    enviadas = 0
     btc_estado = btc.get("estado", "FLAT")
-
-    # Reglas de bloqueo (más estrictas con caídas lentas)
     bloquear_todas = btc_estado in ("DOWN", "DOWN_SOFT")
-    bloquear_tempranas = bloquear_todas
-    bloquear_fuertes = bloquear_todas
-    bloquear_reentradas = bloquear_todas
 
     print(f"\n📋 Política BTC {btc_estado}:")
     if bloquear_todas:
         print(f"   🚫 BLOQUEO TOTAL — BTC bajando (alts siguen a BTC)")
     else:
-        print(f"   TEMPRANAS:  {'🚫 bloqueadas' if bloquear_tempranas else '✅ permitidas'}")
-        print(f"   FUERTES:    {'🚫 bloqueadas' if bloquear_fuertes else '✅ permitidas'}")
-        print(f"   REENTRADAS: {'🚫 bloqueadas' if bloquear_reentradas else '✅ permitidas'}")
+        print(f"   ✅ Alertas permitidas")
 
-    # ─── FUERTES ───
-    if not bloquear_fuertes:
-        fuertes.sort(key=lambda x: -x["cambio_1h"])
-        for a in fuertes[:MAX_POR_TIPO]:
-            if enviar_alerta_arranque(a, btc):
-                enviadas += 1
-                print(f"   🚨 FUERTE: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
-                      f"vol {a['vol_ratio']:.2f}x)")
-    elif fuertes:
-        print(f"   ⏸️ {len(fuertes)} FUERTES bloqueadas por BTC {btc_estado}")
+    if bloquear_todas:
+        print(f"\n{'='*70}")
+        print(f"📢 RESUMEN")
+        print(f"   {linea_btc}")
+        print(f"   Alertas enviadas: 0")
+        print(f"{'='*70}")
+        return
 
-    # ─── TEMPRANAS ───
-    if not bloquear_tempranas:
-        tempranas.sort(key=lambda x: -x["cambio_1h"])
-        for a in tempranas[:MAX_POR_TIPO]:
-            if enviar_alerta_arranque(a, btc):
-                enviadas += 1
-                print(f"   🟡 TEMPRANA: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
-                      f"vol {a['vol_ratio']:.2f}x)")
-    elif tempranas:
-        print(f"   ⏸️ {len(tempranas)} TEMPRANAS bloqueadas por BTC {btc_estado}")
+    # ═══════════════════════════════════════════════════════════
+    # DEDUPLICACIÓN POR MONEDA
+    # ═══════════════════════════════════════════════════════════
+    alertas_recientes = cargar_alertas_recientes()
 
-    # ─── REENTRADAS ───
-    if not bloquear_reentradas:
-        reentradas.sort(key=lambda x: (x["distancia_fibo"], -x["vol_ratio"]))
-        for a in reentradas[:MAX_POR_TIPO]:
-            if enviar_alerta_reentrada(a, btc):
-                enviadas += 1
-                print(f"   📐 REENTRADA: {a['symbol']} (fibo {a['pos_actual']:.1f}% | "
-                      f"vol {a['vol_ratio']:.2f}x)")
-    elif reentradas:
-        print(f"   ⏸️ {len(reentradas)} REENTRADAS bloqueadas por BTC {btc_estado}")
+    # Combinar todas las alertas en una sola lista con prioridad
+    todas_alertas = []
+    for a in fuertes:
+        todas_alertas.append({**a, "señal_tipo": "FUERTE", "prioridad": 1})
+    for a in tempranas:
+        todas_alertas.append({**a, "señal_tipo": "TEMPRANA", "prioridad": 2})
+    for a in reentradas:
+        todas_alertas.append({**a, "señal_tipo": "REENTRADA", "prioridad": 3})
 
-    # === RESUMEN ===
-    print(f"\n{'='*70}")
-    print(f"📢 RESUMEN")
-    print(f"   {linea_btc}")
-    print(f"   Alertas enviadas: {enviadas}")
-    print(f"{'='*70}")
+    # Agrupar por símbolo (conservar la de mayor prioridad)
+    por_simbolo = {}
+    for a in todas_alertas:
+        sym = a["symbol"]
+        if sym not in por_simbolo:
+            por_simbolo[sym] = a
+        else:
+            if a["prioridad"] < por_simbolo[sym]["prioridad"]:
+                por_simbolo[sym] = a
 
+    # Filtrar las ya avisadas
+    nuevas = []
+    for sym, alerta in por_simbolo.items():
+        if ya_avisado(sym, alertas_recientes):
+            print(f"   ⏭️ {sym} ya avisado en las últimas {COOLDOWN_HORAS}h")
+            continue
+        nuevas.append(alerta)
 
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"\n❌ ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    print(f"\n   📊 Alertas únicas: {len(nuevas)} (de {len(todas_alertas)} totales)")
+
+    if not nuevas:
+        print(f"\n{'='*70}")
+        print(f"📢 RESUMEN")
+        print(f"   {linea_btc}")
+        print(f"   Alertas enviadas: 0 (todas en cooldown)")
+        print(f"{'='*70}")
+        return
+
+    # Ordenar por prioridad (FUERTE primero)
+    nuevas.sort(key=lambda x: (x["prioridad"], -x.get("cambio_1h", 0)))
+
+    # ═══════════════════════════════════════════════════════════
