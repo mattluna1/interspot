@@ -10,18 +10,12 @@ BTC análisis (6 estados):
   - 🟢 UP        → subiendo sostenido
   - ⚪ FLAT      → plano
   - 🟡 DOWN_SOFT → cayendo suave
-  - ⚪ FLAT      → plano real (sin tendencia)
-  - 🟡 DOWN_SOFT → cayendo (lento o suave)
   - 🔴 DOWN      → cayendo fuerte
   - 🟣 BOTTOM    → fondo detectado (preparar)
   - 🟢 RECOVERY  → rebote tras caída (mejor momento)
-  - 🟣 BOTTOM    → fondo REAL (requiere rebote)
-  - 🟢 RECOVERY  → rebote confirmado tras caída
 
 Bloqueo gradual por BTC:
   🔴 DOWN      → bloquea TODAS las alertas
-  🟡 DOWN_SOFT → bloquea TEMPRANAS y REENTRADAS (permite FUERTES)
-  Otros        → permite todas
   🟡 DOWN_SOFT → bloquea TODAS (caída lenta = no entrar)
   🟣 BOTTOM    → permite (rebote real)
   🟢 RECOVERY  → permite (momento óptimo)
@@ -187,18 +181,12 @@ def cumple_calidad(mc, rank):
 
 # ============================================================
 # ANÁLISIS BTC — 6 ESTADOS
-# ANÁLISIS BTC — 6 ESTADOS (VERSIÓN MEJORADA)
 # ============================================================
 
 def analizar_btc(df):
     """
     Analiza BTC y clasifica en 6 estados:
       UP / FLAT / DOWN_SOFT / DOWN / BOTTOM / RECOVERY
-
-    Reglas clave:
-      - BOTTOM requiere REBOTE real (cambio_1h > +0.2%), no solo estar plano
-      - DOWN_SOFT captura cualquier caída lenta (cambio_1h < -0.2%)
-      - FLAT solo cuando BTC está realmente plano
     """
     g = df[df["symbol"] == "BTC"].sort_values("timestamp")
     if len(g) < 40:
@@ -240,48 +228,31 @@ def analizar_btc(df):
     pos_respecto_min = ((p_fin - p_min_4h) / p_min_4h) * 100 if p_min_4h > 0 else 0
 
     # === CLASIFICACIÓN DE 6 ESTADOS ===
-    # ═══════════════════════════════════════════════════════════
-    # CLASIFICACIÓN DE 6 ESTADOS (MEJORADA)
-    # ═══════════════════════════════════════════════════════════
-
-    # RECOVERY: BTC rebotando tras caída
-    if cambio_1h > 0.3 and cambio_4h < -0.5 and pos_respecto_min > 1.0:
     # 🟢 RECOVERY: BTC rebotando claramente tras caída
-    # Requiere: subida +0.5% en 1h Y al menos +1.5% arriba del mínimo
     if (cambio_1h > 0.5 and
         cambio_4h < -1.0 and
         pos_respecto_min > 1.5):
         estado = "RECOVERY"
 
-    # BOTTOM: BTC dejó de caer (plano tras caída)
-    elif -0.3 < cambio_1h < 0.4 and cambio_4h < -1.0:
     # 🟣 BOTTOM: BTC dejó de caer Y muestra REBOTE REAL
-    # Requiere: subida +0.2% en 1h Y al menos +0.8% arriba del mínimo
-    # (antes era "plano" y daba falsos positivos)
     elif (cambio_1h > 0.2 and
           cambio_4h < -1.0 and
           pos_respecto_min > 0.8):
         estado = "BOTTOM"
 
-    # DOWN: BTC cayendo fuerte
     # 🔴 DOWN: BTC cayendo fuerte
     elif cambio_1h < -1.5 or cambio_4h < -3.0:
         estado = "DOWN"
 
-    # DOWN_SOFT: BTC cayendo suave
-    elif cambio_1h < -0.5:
-    # 🟡 DOWN_SOFT: BTC cayendo lento o suave (cualquier caída)
-    # (antes necesitaba -0.5%, ahora -0.2% para capturar caídas lentas)
+    # 🟡 DOWN_SOFT: BTC cayendo lento o suave
     elif cambio_1h < -0.2:
         estado = "DOWN_SOFT"
 
-    # UP: BTC subiendo sostenido
     # 🟢 UP: BTC subiendo sostenido
     elif cambio_1h > 0.5 and cambio_4h > 0.5:
         estado = "UP"
 
-    # FLAT: plano
-    # ⚪ FLAT: plano real (entre -0.2% y +0.2%)
+    # ⚪ FLAT: plano real
     else:
         estado = "FLAT"
 
@@ -300,17 +271,14 @@ def analizar_btc(df):
 def _contexto_btc(btc):
     """Retorna (linea, aviso) con los 6 estados."""
     mapa = {
-        "UP":        ("🟢 BTC: subiendo", ""),
-        "FLAT":      ("⚪ BTC: neutral", ""),
-        "DOWN_SOFT": ("🟡 BTC: bajando suave",
-                      "⚠️ Mercado flojo — sé selectivo"),
+        "UP":        ("🟢 BTC: subiendo",
+                      ""),
+        "FLAT":      ("⚪ BTC: neutral",
+                      ""),
         "DOWN_SOFT": ("🟡 BTC: cayendo lento",
                       "⏸️ BTC bajando — esperar suelo"),
         "DOWN":      ("🔴 BTC: cayendo fuerte",
                       "🚨 BTC en caída — no entrar a alts"),
-        "BOTTOM":    ("🟣 BTC: fondo — dejó de caer",
-                      "⏳ Preparar entradas, esperar confirmación"),
-        "RECOVERY":  ("🟢 BTC: recovery — rebotando",
         "BOTTOM":    ("🟣 BTC: fondo — rebotando",
                       "🎯 BTC muestra rebote — preparar entradas"),
         "RECOVERY":  ("🟢 BTC: recovery — rebote confirmado",
@@ -708,20 +676,15 @@ def main():
     print(f"   📐 REENTRADAS: {len(reentradas)}")
 
     # ═══════════════════════════════════════════════════════════
-    # ✅ NUEVO: BLOQUEO GRADUAL SEGÚN BTC
     # BLOQUEO GRADUAL SEGÚN BTC
     # ═══════════════════════════════════════════════════════════
     enviadas = 0
     btc_estado = btc.get("estado", "FLAT")
 
-    # Reglas de bloqueo
-    bloquear_tempranas = btc_estado in ("DOWN", "DOWN_SOFT")
-    bloquear_fuertes   = btc_estado == "DOWN"
-    bloquear_reentradas = btc_estado in ("DOWN", "DOWN_SOFT")
-    # Reglas de bloqueo (más estrictas con caídas lentas)
+    # Bloqueo total si BTC está cayendo (DOWN o DOWN_SOFT)
     bloquear_todas = btc_estado in ("DOWN", "DOWN_SOFT")
-    bloquear_tempranas = bloquear_todas
-    bloquear_fuertes = bloquear_todas
+    bloquear_tempranas  = bloquear_todas
+    bloquear_fuertes    = bloquear_todas
     bloquear_reentradas = bloquear_todas
 
     print(f"\n📋 Política BTC {btc_estado}:")
@@ -730,10 +693,6 @@ def main():
     print(f"   REENTRADAS: {'🚫 bloqueadas' if bloquear_reentradas else '✅ permitidas'}")
     if bloquear_todas:
         print(f"   🚫 BLOQUEO TOTAL — BTC bajando (alts siguen a BTC)")
-    else:
-        print(f"   TEMPRANAS:  {'🚫 bloqueadas' if bloquear_tempranas else '✅ permitidas'}")
-        print(f"   FUERTES:    {'🚫 bloqueadas' if bloquear_fuertes else '✅ permitidas'}")
-        print(f"   REENTRADAS: {'🚫 bloqueadas' if bloquear_reentradas else '✅ permitidas'}")
 
     # ─── FUERTES ───
     if not bloquear_fuertes:
@@ -745,7 +704,6 @@ def main():
                       f"vol {a['vol_ratio']:.2f}x)")
     elif fuertes:
         print(f"\n   ⏸️ {len(fuertes)} FUERTES bloqueadas por BTC {btc_estado}")
-        print(f"   ⏸️ {len(fuertes)} FUERTES bloqueadas por BTC {btc_estado}")
 
     # ─── TEMPRANAS ───
     if not bloquear_tempranas:
@@ -773,15 +731,4 @@ def main():
     print(f"\n{'='*70}")
     print(f"📢 RESUMEN")
     print(f"   {linea_btc}")
-    print(f"   Alertas enviadas: {enviadas}")
-    print(f"{'='*70}")
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"\n❌ ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    print(f"   Alertas enviadas: {
