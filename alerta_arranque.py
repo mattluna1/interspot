@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALERTA ARRANQUE + REENTRADA — 3 SEÑALES + BTC 6 ESTADOS
+ALERTA ARRANQUE + REENTRADA — 3 SEÑALES + xk1 6 ESTADOS
   1. 🟡 TEMPRANA  → arranque con volumen empezando (1.2x+)
   2. 🚨 FUERTE    → arranque confirmado (1.4x+)
   3. 📐 REENTRADA → rebote en Fibo 61.8%
 
-BTC análisis (6 estados):
+xk1 análisis (6 estados):
   - 🟢 UP        → subiendo sostenido
   - ⚪ FLAT      → plano
   - 🟡 DOWN_SOFT → cayendo suave
@@ -14,12 +14,12 @@ BTC análisis (6 estados):
   - 🟣 BOTTOM    → fondo detectado (preparar)
   - 🟢 RECOVERY  → rebote tras caída (mejor momento)
 
-Bloqueo gradual por BTC:
+Bloqueo gradual por xk1:
   🔴 DOWN      → bloquea TODAS las alertas
   🟡 DOWN_SOFT → bloquea TEMPRANAS y REENTRADAS (permite FUERTES)
   Otros        → permite todas
 
-Aviso especial cuando BTC CAMBIA de estado.
+Aviso especial cuando xk1 CAMBIA de estado.
 """
 
 import json
@@ -30,6 +30,45 @@ from io import StringIO
 
 import pandas as pd
 import requests
+
+
+# ============================================================
+# SISTEMA DE ALIAS
+# ============================================================
+
+def _cargar_secretos():
+    data = {}
+    if os.path.exists("secretos.json"):
+        try:
+            with open("secretos.json", "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    if not data:
+        raw = os.getenv("SECRETOS_JSON")
+        if raw:
+            try:
+                data = json.loads(raw)
+            except Exception:
+                data = {}
+    real_a_alias = dict(data)
+    alias_a_real = {v: k for k, v in data.items()}
+    return alias_a_real, real_a_alias
+
+
+ALIAS_A_REAL, REAL_A_ALIAS = _cargar_secretos()
+
+
+def a_alias(real):
+    if not real:
+        return real
+    return REAL_A_ALIAS.get(str(real).strip().upper(), str(real).strip().upper())
+
+
+def a_real(alias):
+    if not alias:
+        return alias
+    return ALIAS_A_REAL.get(str(alias).strip(), str(alias).strip())
 
 
 # ============================================================
@@ -52,11 +91,11 @@ CSV_URLS = {
 }
 
 EXCLUIR = {
-    "USDT", "USDC", "DAI", "TUSD", "FDUSD", "BUSD", "USDD", "USDE",
-    "PYUSD", "USDS", "USD1", "RLUSD", "USD0", "USDSUI", "USDON",
-    "USDAI", "AUSD", "USDG", "USDGO", "USX", "EURC", "USDF", "GHO",
-    "FRAX", "LUSD", "SUSD", "USDR", "USDY", "USTC", "MIM", "CRVUSD",
-    "PAXG", "XAUT", "WBTC", "WETH", "STETH", "WSTETH", "HTX",
+    "xkqy1", "xkqy2", "xkqy3", "xkqy4", "xkqy5", "xkqy6", "xkqy7", "xkqy8",
+    "xkqy9", "xkqya", "xkqyb", "xkqyc", "xkqyd", "xkqye", "xkqyf",
+    "xkqyg", "xkqyh", "xkqyi", "xkqyj", "xkqyk", "xkqyl", "xkqym", "xkqyn",
+    "xkqyo", "xkqyp", "xkqyq", "xkqyr", "xkqys", "xkqyt", "xkqyu", "xkqyv",
+    "xkqyw", "xkqyx", "xkqyy", "xkqyz", "xkqy0", "xkqz1", "xkqz2",
 }
 
 
@@ -100,7 +139,7 @@ RANK_MAX            = 280
 
 MAX_POR_TIPO        = 10
 
-# Archivo de estado BTC (persistente)
+# Archivo de estado xk1 (persistente)
 BTC_STATE_FILE      = "btc_state.json"
 
 
@@ -135,6 +174,11 @@ def cargar_datos():
             r.raise_for_status()
             df = pd.read_csv(StringIO(r.text))
             df["_fuente"] = nombre
+            if REAL_A_ALIAS and "symbol" in df.columns:
+                df["symbol"] = (
+                    df["symbol"].astype(str).str.strip().str.upper()
+                    .map(lambda s: a_alias(s))
+                )
             dfs.append(df)
             print(f"✅ {nombre}: {len(df):,} filas")
         except Exception as e:
@@ -177,15 +221,15 @@ def cumple_calidad(mc, rank):
 
 
 # ============================================================
-# ANÁLISIS BTC — 6 ESTADOS
+# ANÁLISIS xk1 — 6 ESTADOS
 # ============================================================
 
 def analizar_btc(df):
     """
-    Analiza BTC y clasifica en 6 estados:
+    Analiza xk1 y clasifica en 6 estados:
       UP / FLAT / DOWN_SOFT / DOWN / BOTTOM / RECOVERY
     """
-    g = df[df["symbol"] == "BTC"].sort_values("timestamp")
+    g = df[df["symbol"] == "xk1"].sort_values("timestamp")
     if len(g) < 40:
         return {"estado": "UNKNOWN", "cambio_1h": 0, "cambio_4h": 0,
                 "cambio_24h": 0, "vol_ratio": 0, "precio": 0}
@@ -226,23 +270,23 @@ def analizar_btc(df):
 
     # === CLASIFICACIÓN DE 6 ESTADOS ===
 
-    # RECOVERY: BTC rebotando tras caída
+    # RECOVERY: xk1 rebotando tras caída
     if cambio_1h > 0.3 and cambio_4h < -0.5 and pos_respecto_min > 1.0:
         estado = "RECOVERY"
 
-    # BOTTOM: BTC dejó de caer (plano tras caída)
+    # BOTTOM: xk1 dejó de caer (plano tras caída)
     elif -0.3 < cambio_1h < 0.4 and cambio_4h < -1.0:
         estado = "BOTTOM"
 
-    # DOWN: BTC cayendo fuerte
+    # DOWN: xk1 cayendo fuerte
     elif cambio_1h < -1.5 or cambio_4h < -3.0:
         estado = "DOWN"
 
-    # DOWN_SOFT: BTC cayendo suave
+    # DOWN_SOFT: xk1 cayendo suave
     elif cambio_1h < -0.5:
         estado = "DOWN_SOFT"
 
-    # UP: BTC subiendo sostenido
+    # UP: xk1 subiendo sostenido
     elif cambio_1h > 0.5 and cambio_4h > 0.5:
         estado = "UP"
 
@@ -265,27 +309,27 @@ def analizar_btc(df):
 def _contexto_btc(btc):
     """Retorna (linea, aviso) con los 6 estados."""
     mapa = {
-        "UP":        ("🟢 BTC: subiendo", ""),
-        "FLAT":      ("⚪ BTC: neutral", ""),
-        "DOWN_SOFT": ("🟡 BTC: bajando suave",
+        "UP":        ("🟢 xk1: subiendo", ""),
+        "FLAT":      ("⚪ xk1: neutral", ""),
+        "DOWN_SOFT": ("🟡 xk1: bajando suave",
                       "⚠️ Mercado flojo — sé selectivo"),
-        "DOWN":      ("🔴 BTC: cayendo fuerte",
-                      "🚨 BTC en caída — no entrar a alts"),
-        "BOTTOM":    ("🟣 BTC: fondo — dejó de caer",
+        "DOWN":      ("🔴 xk1: cayendo fuerte",
+                      "🚨 xk1 en caída — no entrar a alts"),
+        "BOTTOM":    ("🟣 xk1: fondo — dejó de caer",
                       "⏳ Preparar entradas, esperar confirmación"),
-        "RECOVERY":  ("🟢 BTC: recovery — rebotando",
+        "RECOVERY":  ("🟢 xk1: recovery — rebotando",
                       "🔥 Momento óptimo para entrar a alts"),
-        "UNKNOWN":   ("❓ BTC: sin datos", ""),
+        "UNKNOWN":   ("❓ xk1: sin datos", ""),
     }
-    return mapa.get(btc["estado"], ("⚪ BTC: neutral", ""))
+    return mapa.get(btc["estado"], ("⚪ xk1: neutral", ""))
 
 
 # ============================================================
-# DETECCIÓN DE CAMBIO DE ESTADO BTC
+# DETECCIÓN DE CAMBIO DE ESTADO xk1
 # ============================================================
 
 def cargar_btc_estado_previo():
-    """Carga el último estado guardado de BTC."""
+    """Carga el último estado guardado de xk1."""
     if not os.path.exists(BTC_STATE_FILE):
         return None
     try:
@@ -297,7 +341,7 @@ def cargar_btc_estado_previo():
 
 
 def guardar_btc_estado(estado):
-    """Guarda el estado actual de BTC."""
+    """Guarda el estado actual de xk1."""
     try:
         with open(BTC_STATE_FILE, "w") as f:
             json.dump({
@@ -309,37 +353,37 @@ def guardar_btc_estado(estado):
 
 
 def enviar_alerta_cambio_btc(estado_previo, btc):
-    """Envía alerta a Telegram SOLO si BTC cambió a un estado importante."""
+    """Envía alerta a Telegram SOLO si xk1 cambió a un estado importante."""
     if estado_previo == btc["estado"]:
         return False
 
     # Transiciones importantes (solo estas se notifican)
     transiciones = {
-        ("UP", "FLAT"):          ("🟡", "BTC PERDIENDO FUERZA",
+        ("UP", "FLAT"):          ("🟡", "xk1 PERDIENDO FUERZA",
                                   "Toma ganancias, mercado girando"),
-        ("UP", "DOWN_SOFT"):     ("🟡", "BTC GIRANDO A LA BAJA",
+        ("UP", "DOWN_SOFT"):     ("🟡", "xk1 GIRANDO A LA BAJA",
                                   "Cuidado con alts"),
-        ("UP", "DOWN"):          ("🔴", "BTC GIRÓ A LA BAJA",
+        ("UP", "DOWN"):          ("🔴", "xk1 GIRÓ A LA BAJA",
                                   "🚨 NO ENTRAR A ALTS"),
-        ("FLAT", "DOWN_SOFT"):   ("🟡", "BTC EMPIEZA A CAER",
+        ("FLAT", "DOWN_SOFT"):   ("🟡", "xk1 EMPIEZA A CAER",
                                   "Cuidado con alts"),
-        ("FLAT", "DOWN"):        ("🔴", "BTC CAYENDO FUERTE",
+        ("FLAT", "DOWN"):        ("🔴", "xk1 CAYENDO FUERTE",
                                   "🚨 NO ENTRAR A ALTS"),
-        ("DOWN_SOFT", "DOWN"):   ("🔴", "BTC CAYENDO FUERTE",
+        ("DOWN_SOFT", "DOWN"):   ("🔴", "xk1 CAYENDO FUERTE",
                                   "🚨 NO ENTRAR A ALTS"),
-        ("DOWN", "BOTTOM"):      ("🟣", "BTC TOCA FONDO",
+        ("DOWN", "BOTTOM"):      ("🟣", "xk1 TOCA FONDO",
                                   "⏳ Preparar entradas en alts"),
-        ("DOWN_SOFT", "BOTTOM"): ("🟣", "BTC TOCA FONDO",
+        ("DOWN_SOFT", "BOTTOM"): ("🟣", "xk1 TOCA FONDO",
                                   "⏳ Preparar entradas en alts"),
-        ("DOWN", "RECOVERY"):    ("🟢", "BTC REBOTA",
+        ("DOWN", "RECOVERY"):    ("🟢", "xk1 REBOTA",
                                   "🔥 MOMENTO ÓPTIMO — entradas en alts"),
-        ("BOTTOM", "RECOVERY"):  ("🟢", "BTC REBOTA",
+        ("BOTTOM", "RECOVERY"):  ("🟢", "xk1 REBOTA",
                                   "🔥 MOMENTO ÓPTIMO — entradas en alts"),
-        ("BOTTOM", "UP"):        ("🟢", "BTC CONFIRMA SUBIDA",
+        ("BOTTOM", "UP"):        ("🟢", "xk1 CONFIRMA SUBIDA",
                                   "🟢 Buen momento para alts"),
-        ("RECOVERY", "UP"):      ("🟢", "BTC CONFIRMA SUBIDA",
+        ("RECOVERY", "UP"):      ("🟢", "xk1 CONFIRMA SUBIDA",
                                   "🟢 Buen momento para alts"),
-        ("RECOVERY", "DOWN"):    ("🔴", "BTC RECAÓ",
+        ("RECOVERY", "DOWN"):    ("🔴", "xk1 RECAÓ",
                                   "🚨 Rebote fallido — no entrar"),
     }
 
@@ -353,7 +397,7 @@ def enviar_alerta_cambio_btc(estado_previo, btc):
     msg = (
         f"{emoji} {titulo}\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 BTC: ${btc['precio']:,.2f}\n"
+        f"💰 {a_real('xk1')}: ${btc['precio']:,.2f}\n"
         f"📊 1h: {btc['cambio_1h']:+.2f}% | 4h: {btc['cambio_4h']:+.2f}%\n"
         f"📊 24h: {btc['cambio_24h']:+.2f}% | Vol: {btc['vol_ratio']:.2f}x\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
@@ -555,7 +599,7 @@ def enviar_alerta_arranque(a, btc):
 
     msg = (
         f"{emoji} {titulo}\n"
-        f"🪙 {a['symbol']} (rank {a['cmc_rank']})\n"
+        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
         f"📈 +{a['cambio_1h']:.2f}% en 1h\n"
         f"📊 4h: {a['cambio_4h']:+.2f}% | 24h: {a['cambio_24h']:+.2f}%\n"
         f"💰 ${a['precio']:.6f}\n"
@@ -578,7 +622,7 @@ def enviar_alerta_reentrada(a, btc):
 
     msg = (
         f"📐 REENTRADA FIBO\n"
-        f"🪙 {a['symbol']} (rank {a['cmc_rank']})\n"
+        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"📊 Pump previo 48h: +{a['pump_total']:.1f}%\n"
         f"   Máx: ${a['p_max']:.6f}\n"
@@ -613,7 +657,7 @@ def main():
     ahora_lima = ahora - timedelta(hours=5)
 
     print(f"\n{'='*70}")
-    print(f"⚡ ARRANQUE + 📐 REENTRADA — BTC 6 ESTADOS")
+    print(f"⚡ ARRANQUE + 📐 REENTRADA — xk1 6 ESTADOS")
     print(f"   UTC:  {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"   Lima: {ahora_lima.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*70}")
@@ -621,21 +665,21 @@ def main():
     df = cargar_datos()
     print(f"📊 Total: {len(df):,} filas | {df['symbol'].nunique()} monedas")
 
-    # === ANÁLISIS BTC ===
+    # === ANÁLISIS xk1 ===
     btc = analizar_btc(df)
     linea_btc, aviso_btc = _contexto_btc(btc)
 
-    print(f"\n🔍 CONTEXTO BTC:")
+    print(f"\n🔍 CONTEXTO {a_real('xk1')}:")
     print(f"   {linea_btc}")
     if aviso_btc:
         print(f"   {aviso_btc}")
 
-    # === AVISO DE CAMBIO DE ESTADO BTC ===
+    # === AVISO DE CAMBIO DE ESTADO xk1 ===
     estado_previo = cargar_btc_estado_previo()
     if estado_previo and estado_previo != btc["estado"]:
-        print(f"\n🔄 Cambio BTC: {estado_previo} → {btc['estado']}")
+        print(f"\n🔄 Cambio {a_real('xk1')}: {estado_previo} → {btc['estado']}")
         if enviar_alerta_cambio_btc(estado_previo, btc):
-            print(f"   📱 Alerta de cambio BTC enviada")
+            print(f"   📱 Alerta de cambio {a_real('xk1')} enviada")
     guardar_btc_estado(btc["estado"])
 
     # === ESCANEO ===
@@ -647,7 +691,7 @@ def main():
     reentradas = []
 
     for sym in todas:
-        if sym.upper() in EXCLUIR or sym.upper() == "BTC":
+        if sym.upper() in EXCLUIR or sym.upper() == "xk1":
             continue
 
         r1 = detectar_arranque(df, sym)
@@ -666,7 +710,7 @@ def main():
     print(f"   📐 REENTRADAS: {len(reentradas)}")
 
     # ═══════════════════════════════════════════════════════════
-    # ✅ NUEVO: BLOQUEO GRADUAL SEGÚN BTC
+    # ✅ NUEVO: BLOQUEO GRADUAL SEGÚN xk1
     # ═══════════════════════════════════════════════════════════
     enviadas = 0
     btc_estado = btc.get("estado", "FLAT")
@@ -676,7 +720,7 @@ def main():
     bloquear_fuertes   = btc_estado == "DOWN"
     bloquear_reentradas = btc_estado in ("DOWN", "DOWN_SOFT")
 
-    print(f"\n📋 Política BTC {btc_estado}:")
+    print(f"\n📋 Política {a_real('xk1')} {btc_estado}:")
     print(f"   TEMPRANAS:  {'🚫 bloqueadas' if bloquear_tempranas else '✅ permitidas'}")
     print(f"   FUERTES:    {'🚫 bloqueadas' if bloquear_fuertes else '✅ permitidas'}")
     print(f"   REENTRADAS: {'🚫 bloqueadas' if bloquear_reentradas else '✅ permitidas'}")
@@ -687,10 +731,10 @@ def main():
         for a in fuertes[:MAX_POR_TIPO]:
             if enviar_alerta_arranque(a, btc):
                 enviadas += 1
-                print(f"   🚨 FUERTE: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
+                print(f"   🚨 FUERTE: {a_real(a['symbol'])} (+{a['cambio_1h']:.2f}% | "
                       f"vol {a['vol_ratio']:.2f}x)")
     elif fuertes:
-        print(f"\n   ⏸️ {len(fuertes)} FUERTES bloqueadas por BTC {btc_estado}")
+        print(f"\n   ⏸️ {len(fuertes)} FUERTES bloqueadas por {a_real('xk1')} {btc_estado}")
 
     # ─── TEMPRANAS ───
     if not bloquear_tempranas:
@@ -698,10 +742,10 @@ def main():
         for a in tempranas[:MAX_POR_TIPO]:
             if enviar_alerta_arranque(a, btc):
                 enviadas += 1
-                print(f"   🟡 TEMPRANA: {a['symbol']} (+{a['cambio_1h']:.2f}% | "
+                print(f"   🟡 TEMPRANA: {a_real(a['symbol'])} (+{a['cambio_1h']:.2f}% | "
                       f"vol {a['vol_ratio']:.2f}x)")
     elif tempranas:
-        print(f"   ⏸️ {len(tempranas)} TEMPRANAS bloqueadas por BTC {btc_estado}")
+        print(f"   ⏸️ {len(tempranas)} TEMPRANAS bloqueadas por {a_real('xk1')} {btc_estado}")
 
     # ─── REENTRADAS ───
     if not bloquear_reentradas:
@@ -709,10 +753,10 @@ def main():
         for a in reentradas[:MAX_POR_TIPO]:
             if enviar_alerta_reentrada(a, btc):
                 enviadas += 1
-                print(f"   📐 REENTRADA: {a['symbol']} (fibo {a['pos_actual']:.1f}% | "
+                print(f"   📐 REENTRADA: {a_real(a['symbol'])} (fibo {a['pos_actual']:.1f}% | "
                       f"vol {a['vol_ratio']:.2f}x)")
     elif reentradas:
-        print(f"   ⏸️ {len(reentradas)} REENTRADAS bloqueadas por BTC {btc_estado}")
+        print(f"   ⏸️ {len(reentradas)} REENTRADAS bloqueadas por {a_real('xk1')} {btc_estado}")
 
     # === RESUMEN ===
     print(f"\n{'='*70}")
