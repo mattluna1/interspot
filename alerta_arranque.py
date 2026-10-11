@@ -757,7 +757,7 @@ def enviar_alerta_arranque(a, btc):
         f"📊 4h: {a['cambio_4h']:+.2f}% | 24h: {a['cambio_24h']:+.2f}%\n"
         f"💰 ${a['precio']:.6f}\n"
         f"📊 Vol: {a['vol_ratio']:.2f}x (${a['vol_m']:.1f}M)\n"
-        f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
+        f"🏦 MC: {a['market_cap_m']:.1f}M\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"{linea_btc}\n"
         f"🕐 {hora_lima} Lima\n"
@@ -790,7 +790,7 @@ def enviar_alerta_reentrada(a, btc):
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"📈 Rebote: +{a['rebote_pct']:.2f}% desde pullback\n"
         f"📊 Vol: {a['vol_ratio']:.2f}x (${a['vol_m']:.1f}M)\n"
-        f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
+        f"🏦 MC: {a['market_cap_m']:.1f}M\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"{linea_btc}\n"
         f"🕐 {hora_lima} Lima"
@@ -943,6 +943,97 @@ def main():
 
     # === GUARDAR ESTADO DE ALERTAS ===
     guardar_alertas_state(alertas_state)
+
+    # ═══════════════════════════════════════════════════════════
+    # 🔬 DIAGNÓSTICO DE FILTROS (NUEVO - SOLO LECTURA)
+    # ═══════════════════════════════════════════════════════════
+    print(f"\n🔬 DIAGNÓSTICO DE FILTROS (por qué no dispara cada moneda):")
+    debug = {}
+    top_cambios = []
+
+    for sym in todas:
+        if sym.upper() in EXCLUIR or sym.upper() == "xk1":
+            continue
+
+        g = df[df["symbol"] == sym].sort_values("timestamp")
+        if len(g) < 40:
+            debug["1_muy_pocos_datos"] = debug.get("1_muy_pocos_datos", 0) + 1
+            continue
+
+        ts_max = g["timestamp"].max()
+        if not es_fresco(ts_max):
+            debug["2_no_fresco"] = debug.get("2_no_fresco", 0) + 1
+            continue
+
+        mc = g.iloc[-1].get("market_cap", 0) or 0
+        rank = g.iloc[-1].get("cmc_rank", 9999)
+        if not cumple_calidad(mc, rank):
+            debug["3_no_calidad"] = debug.get("3_no_calidad", 0) + 1
+            continue
+
+        corte_1h = ts_max - timedelta(hours=1)
+        rec_1h = g[g["timestamp"] >= corte_1h]
+        if len(rec_1h) < 3:
+            debug["4_sin_rec_1h"] = debug.get("4_sin_rec_1h", 0) + 1
+            continue
+
+        p_ini_1h = rec_1h.iloc[0]["price"]
+        p_fin = rec_1h.iloc[-1]["price"]
+        if p_ini_1h <= 0:
+            debug["5_precio_invalido"] = debug.get("5_precio_invalido", 0) + 1
+            continue
+
+        cambio_1h = ((p_fin - p_ini_1h) / p_ini_1h) * 100
+
+        top_cambios.append((a_real(sym), cambio_1h, int(rank), p_fin))
+
+        if cambio_1h < TEMPRANA_CAMBIO_1H:
+            debug["6_cambio_1h_pequeno"] = debug.get("6_cambio_1h_pequeno", 0) + 1
+            continue
+
+        corte_4h = ts_max - timedelta(hours=4)
+        rec_4h = g[g["timestamp"] >= corte_4h]
+        if len(rec_4h) < 3:
+            debug["7_sin_rec_4h"] = debug.get("7_sin_rec_4h", 0) + 1
+            continue
+
+        p_ini_4h = rec_4h.iloc[0]["price"]
+        cambio_4h = ((p_fin - p_ini_4h) / p_ini_4h) * 100 if p_ini_4h > 0 else 0
+
+        if cambio_4h > MAX_CAMBIO_4H:
+            debug["8_cambio_4h_grande"] = debug.get("8_cambio_4h_grande", 0) + 1
+            continue
+
+        corte_24h = ts_max - timedelta(hours=24)
+        rec_24h = g[g["timestamp"] >= corte_24h]
+        p_ini_24h = rec_24h.iloc[0]["price"] if len(rec_24h) > 0 else p_ini_4h
+        cambio_24h = ((p_fin - p_ini_24h) / p_ini_24h) * 100 if p_ini_24h > 0 else 0
+
+        if cambio_24h > MAX_CAMBIO_24H:
+            debug["9_cambio_24h_grande"] = debug.get("9_cambio_24h_grande", 0) + 1
+            continue
+
+        v_base = g["volume_24h"].tail(20).mean()
+        v_ult = g["volume_24h"].iloc[-1]
+        vol_ratio = v_ult / v_base if v_base > 0 else 0
+
+        if v_ult < VOL_ABS_MIN:
+            debug["10_vol_abs_pequeno"] = debug.get("10_vol_abs_pequeno", 0) + 1
+            continue
+
+        if vol_ratio < TEMPRANA_VOL_MIN:
+            debug["11_vol_ratio_pequeno"] = debug.get("11_vol_ratio_pequeno", 0) + 1
+            continue
+
+        debug["12_PASO_TODOS_LOS_FILTROS"] = debug.get("12_PASO_TODOS_LOS_FILTROS", 0) + 1
+
+    for k in sorted(debug.keys()):
+        print(f"   {k}: {debug[k]}")
+
+    print(f"\n📈 TOP 15 CAMBIOS 1H (los más cercanos a disparar):")
+    top_cambios.sort(key=lambda x: -x[1])
+    for sym_real, cambio, rank, precio in top_cambios[:15]:
+        print(f"   {sym_real:10s} rank {rank:4d} | 1h: {cambio:+7.2f}% | ${precio:.6f}")
 
     # === RESUMEN ===
     print(f"\n{'='*70}")
