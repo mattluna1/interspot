@@ -1,4 +1,4 @@
-name: ALERTA ARRANQUE
+name: ALERTA ARRANQUE V2
 
 permissions:
   contents: write
@@ -38,16 +38,27 @@ jobs:
           SECRETOS_JSON: ${{ secrets.SECRETOS_JSON }}
         run: python -u alerta_arranque.py
 
-      - name: Commit BTC state
+      - name: Commit state files
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
+          CHANGES=0
+          
           if [ -f btc_state.json ]; then
             git add btc_state.json
+            CHANGES=1
+          fi
+          
+          if [ -f alertas_state.json ]; then
+            git add alertas_state.json
+            CHANGES=1
+          fi
+          
+          if [ $CHANGES -eq 1 ]; then
             if ! git diff --cached --quiet; then
-              git commit -m "update btc_state [skip ci]"
+              git commit -m "update state [skip ci]"
               git pull --rebase origin main || true
               git push || true
             fi
