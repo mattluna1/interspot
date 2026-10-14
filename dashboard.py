@@ -121,7 +121,19 @@ def cargar_datos():
             df = pd.read_csv(StringIO(r.text))
             df["_fuente"] = nombre
             dfs.append(df)
-            ts_max = pd.to_datetime(df["timestamp"], utc=True).max()
+            
+            # ═══ FIX: parsear timestamps de forma robusta ═══
+            df["timestamp"] = pd.to_datetime(
+                df["timestamp"],
+                utc=True,
+                errors="coerce",
+                format="ISO8601"
+            )
+            
+            ts_max = df["timestamp"].max()
+            if pd.isna(ts_max):
+                raise ValueError("Sin timestamps válidos")
+            
             edad = edad_min(ts_max)
             estados.append((nombre, len(df), edad))
             print(f"  ✅ {nombre:<10} {len(df):>7,} filas  |  últ. dato: hace {formato_edad(edad)}")
