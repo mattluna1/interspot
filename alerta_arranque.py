@@ -151,12 +151,12 @@ ACUM_RUPTURA_MIN    = 4.0
 # UMBRALES — TCB (retroceso Fibo 70-82%)
 # ============================================================
 
-TCB_FIBO_MIN        = 70.0     # ← volver a 70
+TCB_FIBO_MIN        = 70.0
 TCB_FIBO_MAX        = 82.0
-TCB_RALLY_MIN_PCT   = 15.0     # ← rally ≥15% (más fuerte que antes)
+TCB_RALLY_MIN_PCT   = 10.0
 TCB_VENTANA_H       = 72
-TCB_REBOTE_MIN_PCT  = 0.5      # ← detección temprana
-TCB_VOL_MIN         = 1.0      # ← filtro de volumen
+TCB_REBOTE_MIN_PCT  = 1.5     # ← el cambio
+TCB_VOL_MIN         = 1.0     # ← filtro de volumen
 
 
 # ============================================================
