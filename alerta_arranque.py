@@ -148,14 +148,15 @@ ACUM_RUPTURA_MIN    = 4.0
 
 
 # ============================================================
-# UMBRALES — TCB (retroceso Fibo 70-82%)
+# UMBRALES — TCB (retroceso Fibo 75-82%)
 # ============================================================
 
-TCB_FIBO_MIN        = 70.0
+TCB_FIBO_MIN        = 75.0
 TCB_FIBO_MAX        = 82.0
-TCB_RALLY_MIN_PCT   = 10.0
+TCB_RALLY_MIN_PCT   = 15.0
 TCB_VENTANA_H       = 72
-TCB_REBOTE_MIN_PCT  = 3.0
+TCB_REBOTE_MIN_PCT  = 0.5
+TCB_VOL_MIN         = 1.0
 
 
 # ============================================================
@@ -175,7 +176,7 @@ COOLDOWN_SUELO      = 6
 COOLDOWN_ARRANQUE   = 4
 COOLDOWN_REENTRADA  = 8
 COOLDOWN_ACUM       = 12
-COOLDOWN_TCB        = 8
+COOLDOWN_TCB        = 12
 
 
 # ============================================================
@@ -890,8 +891,14 @@ def detectar_tcb(df, symbol, btc_estado):
     if rebote_pct < TCB_REBOTE_MIN_PCT:
         return None
 
+    # Filtro de volumen
+    v_base = g["volume_24h"].tail(20).mean()
+    v_ult = g["volume_24h"].iloc[-1]
+    vol_ratio = v_ult / v_base if v_base > 0 else 0
+    if vol_ratio < TCB_VOL_MIN:
+        return None
+
     p_actual = rec_72.iloc[-1]["price"]
-    v_ult = g["volume_24h"].iloc[-1] if "volume_24h" in g.columns else 0
 
     return {
         "tipo": "TCB",
@@ -904,6 +911,7 @@ def detectar_tcb(df, symbol, btc_estado):
         "p_rebote": p_rebote,
         "fibo_retroceso": fibo_retroceso,
         "rebote_pct": rebote_pct,
+        "vol_ratio": vol_ratio,
         "vol_m": v_ult / 1e6,
         "cmc_rank": int(rank),
         "market_cap_m": mc / 1e6,
@@ -1197,7 +1205,8 @@ def main():
             enviadas += 1
             registrar_alerta(alertas_state, a["symbol"], "TCB")
             print(f"   🚀 TCB: {a_real(a['symbol'])} "
-                  f"(fibo {a['fibo_retroceso']:.1f}% | rebote {a['rebote_pct']:+.1f}%)")
+                  f"(fibo {a['fibo_retroceso']:.1f}% | rebote {a['rebote_pct']:+.1f}% | "
+                  f"vol {a['vol_ratio']:.2f}x)")
 
     # ─── FUERTES ───
     if not bloquear_fuertes:
