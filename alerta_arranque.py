@@ -1,26 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALERTA V2 — SUELO + ARRANQUE + REENTRADA + BTC 6 ESTADOS
+ALERTA V4 — SUELO + ARRANQUE + REENTRADA + ACUMULACIÓN + TCB + BTC 6 ESTADOS
 
 Señales:
-  1. 🎯 SUELO      → caída fuerte + frenado + volumen decreciente (PREPARACIÓN)
-  2. 🟡 TEMPRANA   → arranque con volumen empezando (2.0% / 1.2-1.3x)
-  3. 🚨 FUERTE     → arranque confirmado (3.0% / 1.3x+)
-  4. 📐 REENTRADA  → rebote en Fibo 38-70%
+  1. 🎯 SUELO         → caída fuerte + frenado + volumen decreciente
+  2. 🟡 TEMPRANA      → arranque con volumen empezando (2.0% / 1.2-1.3x)
+  3. 🚨 FUERTE        → arranque confirmado (3.0% / 1.3x+)
+  4. 📐 REENTRADA     → rebote en Fibo 38-70%
+  5. 🚀 ACUMULACIÓN   → QNT-style (rango comprimido + ruptura)
+  6. 🚀 TCB DETECTADO → retroceso Fibo 70-82% + rebote ≥3%
 
 BTC análisis (6 estados): UP / FLAT / DOWN_SOFT / DOWN / BOTTOM / RECOVERY
-
-Bloqueo gradual por BTC:
-  🔴 DOWN      → bloquea TODAS las alertas
-  🟡 DOWN_SOFT → bloquea solo TEMPRANAS
-  Otros        → permite todas
-
-Basado en análisis de 10 días (2026-09-30 a 2026-10-10):
-  - Señal SUELO: 58% aciertos +3%, 15% aciertos +10%
-  - Compresión <2% en 6h: top rupturas +10% a +33%
-  - Ganadoras +30%: caída previa ~7%, volumen arranque ~1.1x
-  - Fibo: todos los niveles 38-70% rinden igual
 
 Sistema de alias: lee secretos.json o SECRETOS_JSON (GitHub Secrets)
 """
@@ -103,7 +94,7 @@ EXCLUIR = {
 
 
 # ============================================================
-# UMBRALES — ARRANQUE (AJUSTADOS V2)
+# UMBRALES — ARRANQUE
 # ============================================================
 
 TEMPRANA_CAMBIO_1H  = 2.0
@@ -120,7 +111,7 @@ MAX_CAMBIO_24H      = 15.0
 
 
 # ============================================================
-# UMBRALES — REENTRADA FIBO (AJUSTADOS V2)
+# UMBRALES — REENTRADA FIBO
 # ============================================================
 
 PUMP_MIN_PCT        = 30.0
@@ -133,7 +124,7 @@ REENTRADA_VOL_MIN   = 1.2
 
 
 # ============================================================
-# UMBRALES — SUELO (NUEVO V2)
+# UMBRALES — SUELO
 # ============================================================
 
 SUELO_CAIDA_24H_MIN     = -10.0
@@ -142,6 +133,29 @@ SUELO_FRENADO_HI        = 1.0
 SUELO_DIST_MIN_MAX      = 3.0
 SUELO_VOL_DECRECIENTE   = 0.75
 SUELO_RANGO_COMPRESION  = 0.60
+
+
+# ============================================================
+# UMBRALES — ACUMULACIÓN (QNT-style)
+# ============================================================
+
+ACUM_RANGO_MIN      = 8.0
+ACUM_RANGO_MAX      = 15.0
+ACUM_POS_RANGO_MIN  = 85.0
+ACUM_VOL_CV_MAX     = 0.35
+ACUM_DUR_MIN        = 20
+ACUM_RUPTURA_MIN    = 4.0
+
+
+# ============================================================
+# UMBRALES — TCB (retroceso Fibo 70-82%)
+# ============================================================
+
+TCB_FIBO_MIN        = 70.0
+TCB_FIBO_MAX        = 82.0
+TCB_RALLY_MIN_PCT   = 10.0
+TCB_VENTANA_H       = 72
+TCB_REBOTE_MIN_PCT  = 3.0
 
 
 # ============================================================
@@ -160,6 +174,8 @@ ALERTAS_STATE_FILE  = "alertas_state.json"
 COOLDOWN_SUELO      = 6
 COOLDOWN_ARRANQUE   = 4
 COOLDOWN_REENTRADA  = 8
+COOLDOWN_ACUM       = 12
+COOLDOWN_TCB        = 8
 
 
 # ============================================================
@@ -209,7 +225,9 @@ def cargar_datos():
         sys.exit("❌ No se pudo cargar ningún CSV")
 
     df = pd.concat(dfs, ignore_index=True)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+    df["timestamp"] = pd.to_datetime(
+        df["timestamp"], utc=True, errors="coerce", format="ISO8601"
+    )
 
     for c in ["price", "volume_24h", "percent_change_24h", "cmc_rank", "market_cap"]:
         if c in df.columns:
@@ -239,6 +257,21 @@ def cumple_calidad(mc, rank):
     if rank > RANK_MAX:
         return False
     return True
+
+
+def hacer_velas_4h(df):
+    """Genera velas de 4h para análisis de ACUM."""
+    df = df.copy()
+    df["vela"] = df["timestamp"].dt.floor("240min")
+    return df.groupby(["symbol", "vela"]).agg(
+        open=("price", "first"),
+        high=("price", "max"),
+        low=("price", "min"),
+        close=("price", "last"),
+        volume=("volume_24h", "last"),
+        rank=("cmc_rank", "last"),
+        mc=("market_cap", "last"),
+    ).reset_index().sort_values(["symbol", "vela"]).reset_index(drop=True)
 
 
 # ============================================================
@@ -445,7 +478,7 @@ def enviar_alerta_cambio_btc(estado_previo, btc):
 
 
 # ============================================================
-# DETECCIÓN — SUELO (NUEVO V2)
+# DETECCIÓN — SUELO
 # ============================================================
 
 def detectar_suelo(df, symbol):
@@ -705,6 +738,180 @@ def detectar_reentrada_fibo(df, symbol):
 
 
 # ============================================================
+# DETECCIÓN — ACUMULACIÓN (QNT-style)
+# ============================================================
+
+def detectar_acumulacion(velas_4h, btc_estado):
+    """
+    Detecta acumulación QNT-style.
+    SOLO se busca si BTC está en FLAT, DOWN_SOFT o RECOVERY.
+    """
+    if btc_estado not in ("FLAT", "DOWN_SOFT", "RECOVERY"):
+        return []
+
+    resultados = []
+
+    for sym, g in velas_4h.groupby("symbol"):
+        if sym == "xk1" or sym in EXCLUIR:
+            continue
+
+        g = g.sort_values("vela").reset_index(drop=True)
+        if len(g) < ACUM_DUR_MIN + 5:
+            continue
+
+        rank = g.iloc[-1].get("rank", 9999)
+        mc = g.iloc[-1].get("mc", 0) or 0
+        if not cumple_calidad(mc, rank):
+            continue
+
+        ultimas = g.tail(ACUM_DUR_MIN)
+
+        p_min = ultimas["low"].min()
+        p_max = ultimas["high"].max()
+        if p_min <= 0:
+            continue
+
+        rango_pct = ((p_max - p_min) / p_min) * 100
+        if rango_pct < ACUM_RANGO_MIN or rango_pct > ACUM_RANGO_MAX:
+            continue
+
+        p_actual = ultimas.iloc[-1]["close"]
+        if p_max <= p_min:
+            continue
+
+        pos_rango = ((p_actual - p_min) / (p_max - p_min)) * 100
+        if pos_rango < ACUM_POS_RANGO_MIN:
+            continue
+
+        vol_medio = ultimas["volume"].mean()
+        vol_std = ultimas["volume"].std()
+        vol_cv = vol_std / vol_medio if vol_medio > 0 else 1
+
+        if vol_cv > ACUM_VOL_CV_MAX:
+            continue
+
+        cambio_reciente = 0
+        if len(g) >= 5:
+            cambio_reciente = ((g.iloc[-1]["close"] - g.iloc[-5]["close"])
+                               / g.iloc[-5]["close"]) * 100
+
+        if cambio_reciente < ACUM_RUPTURA_MIN and pos_rango < 90:
+            continue
+
+        resultados.append({
+            "tipo": "ACUMULACION",
+            "symbol": sym,
+            "rango_pct": rango_pct,
+            "pos_rango": pos_rango,
+            "vol_medio_m": vol_medio / 1e6,
+            "vol_cv": vol_cv,
+            "cambio_reciente": cambio_reciente,
+            "p_actual": p_actual,
+            "p_max": p_max,
+            "p_min": p_min,
+            "rank": int(rank),
+            "mc": mc,
+        })
+
+    return resultados
+
+
+# ============================================================
+# DETECCIÓN — TCB (retroceso Fibo 70-82%)
+# ============================================================
+
+def detectar_tcb(df, symbol, btc_estado):
+    """
+    Detecta retroceso Fibo en zona 70-82% + rebote ≥3%.
+    Solo si BTC en FLAT, DOWN_SOFT o RECOVERY.
+    """
+    if btc_estado not in ("FLAT", "DOWN_SOFT", "RECOVERY"):
+        return None
+
+    g = df[df["symbol"] == symbol].sort_values("timestamp")
+    if len(g) < 50:
+        return None
+
+    ts_max = g["timestamp"].max()
+    if not es_fresco(ts_max):
+        return None
+
+    mc = g.iloc[-1].get("market_cap", 0) or 0
+    rank = g.iloc[-1].get("cmc_rank", 9999)
+    if not cumple_calidad(mc, rank):
+        return None
+
+    # Ventana: últimas 72h
+    corte_72 = ts_max - timedelta(hours=TCB_VENTANA_H)
+    rec_72 = g[g["timestamp"] >= corte_72].reset_index(drop=True)
+    if len(rec_72) < 20:
+        return None
+
+    # Rally previo (mín → máx)
+    p_min = rec_72["price"].min()
+    idx_min = rec_72["price"].idxmin()
+    p_max = rec_72.loc[idx_min:]["price"].max()
+    idx_max = rec_72.loc[idx_min:]["price"].idxmax()
+
+    if p_min <= 0 or p_max <= p_min:
+        return None
+
+    rango = p_max - p_min
+    rango_pct = (rango / p_min) * 100
+
+    if rango_pct < TCB_RALLY_MIN_PCT:
+        return None
+
+    # Corrección post-rally: mínimo después del máximo
+    post_rally = rec_72.loc[idx_max:].copy()
+    if len(post_rally) < 5:
+        return None
+
+    p_min_corr = post_rally["price"].min()
+    if p_min_corr <= 0:
+        return None
+
+    # Retroceso Fibo actual
+    fibo_retroceso = ((p_max - p_min_corr) / rango) * 100
+
+    # Zona objetivo: 70-82%
+    if not (TCB_FIBO_MIN <= fibo_retroceso <= TCB_FIBO_MAX):
+        return None
+
+    # Rebote desde el mínimo de corrección
+    idx_min_corr = post_rally["price"].idxmin()
+    post_min = rec_72.loc[idx_min_corr:]["price"]
+    if len(post_min) < 2:
+        return None
+
+    p_rebote = post_min.max()
+    rebote_pct = ((p_rebote - p_min_corr) / p_min_corr) * 100
+
+    if rebote_pct < TCB_REBOTE_MIN_PCT:
+        return None
+
+    p_actual = rec_72.iloc[-1]["price"]
+    v_ult = g["volume_24h"].iloc[-1] if "volume_24h" in g.columns else 0
+
+    return {
+        "tipo": "TCB",
+        "symbol": symbol,
+        "rango_pct": rango_pct,
+        "p_min": p_min,
+        "p_max": p_max,
+        "p_actual": p_actual,
+        "p_min_corr": p_min_corr,
+        "p_rebote": p_rebote,
+        "fibo_retroceso": fibo_retroceso,
+        "rebote_pct": rebote_pct,
+        "vol_m": v_ult / 1e6,
+        "cmc_rank": int(rank),
+        "market_cap_m": mc / 1e6,
+        "ts": ts_max,
+    }
+
+
+# ============================================================
 # ENVÍO DE MENSAJES
 # ============================================================
 
@@ -757,7 +964,6 @@ def enviar_alerta_arranque(a, btc):
         f"📊 4h: {a['cambio_4h']:+.2f}% | 24h: {a['cambio_24h']:+.2f}%\n"
         f"💰 ${a['precio']:.6f}\n"
         f"📊 Vol: {a['vol_ratio']:.2f}x (${a['vol_m']:.1f}M)\n"
-        f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
         f"🏦 MC: {a['market_cap_m']:.1f}M\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"{linea_btc}\n"
@@ -792,10 +998,63 @@ def enviar_alerta_reentrada(a, btc):
         f"📈 Rebote: +{a['rebote_pct']:.2f}% desde pullback\n"
         f"📊 Vol: {a['vol_ratio']:.2f}x (${a['vol_m']:.1f}M)\n"
         f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
-        f"🏦 MC: {a['market_cap_m']:.1f}M\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"{linea_btc}\n"
         f"🕐 {hora_lima} Lima"
+    )
+    if aviso_btc:
+        msg += f"\n{aviso_btc}"
+
+    return enviar_telegram(msg)
+
+
+def enviar_alerta_acumulacion(a, btc):
+    hora_lima = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%H:%M")
+    linea_btc, aviso_btc = _contexto_btc(btc)
+
+    msg = (
+        f"🚀 ACUMULACIÓN DETECTADA\n"
+        f"🪙 {a_real(a['symbol'])} (rank {a['rank']})\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Rango: {a['rango_pct']:.1f}%\n"
+        f"🎯 Posición: {a['pos_rango']:.0f}% del rango\n"
+        f"📈 Cambio reciente: {a['cambio_reciente']:+.2f}%\n"
+        f"💧 Volumen medio: ${a['vol_medio_m']:.1f}M\n"
+        f"📊 Consistencia: {a['vol_cv']:.2f}\n"
+        f"💰 Precio: ${a['p_actual']:.6f}\n"
+        f"🎯 Resistencia: ${a['p_max']:.6f}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"{linea_btc}\n"
+        f"🕐 {hora_lima} Lima\n"
+        f"💡 QNT-style: posible explosión"
+    )
+    if aviso_btc:
+        msg += f"\n{aviso_btc}"
+
+    return enviar_telegram(msg)
+
+
+def enviar_alerta_tcb(a, btc):
+    hora_lima = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%H:%M")
+    linea_btc, aviso_btc = _contexto_btc(btc)
+
+    msg = (
+        f"🚀 TCB DETECTADO\n"
+        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Rally previo: +{a['rango_pct']:.1f}%\n"
+        f"   Máx: ${a['p_max']:.6f}\n"
+        f"   Mín: ${a['p_min']:.6f}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 Retroceso Fibo: {a['fibo_retroceso']:.1f}%\n"
+        f"💰 Precio actual: ${a['p_actual']:.6f}\n"
+        f"📈 Rebote desde mín: +{a['rebote_pct']:.2f}%\n"
+        f"💧 Vol: ${a['vol_m']:.1f}M\n"
+        f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"{linea_btc}\n"
+        f"🕐 {hora_lima} Lima\n"
+        f"✅ ZONA ÓPTIMA 70-82%"
     )
     if aviso_btc:
         msg += f"\n{aviso_btc}"
@@ -812,7 +1071,7 @@ def main():
     ahora_lima = ahora - timedelta(hours=5)
 
     print(f"\n{'='*70}")
-    print(f"🎯 SUELO + ⚡ ARRANQUE + 📐 REENTRADA — xk1 6 ESTADOS")
+    print(f"🎯 SUELO + ⚡ ARRANQUE + 📐 REENTRADA + 🚀 ACUM + 🚀 TCB — xk1 6 ESTADOS")
     print(f"   UTC:  {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"   Lima: {ahora_lima.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*70}")
@@ -848,6 +1107,8 @@ def main():
     fuertes = []
     tempranas = []
     reentradas = []
+    acumulaciones = []
+    tcb_detectados = []
 
     for sym in todas:
         if sym.upper() in EXCLUIR or sym.upper() == "xk1":
@@ -868,13 +1129,25 @@ def main():
         if r2:
             reentradas.append(r2)
 
-    print(f"\n   🎯 SUELOS:     {len(suelos)}")
-    print(f"   🚨 FUERTES:    {len(fuertes)}")
-    print(f"   🟡 TEMPRANAS:  {len(tempranas)}")
-    print(f"   📐 REENTRADAS: {len(reentradas)}")
+        r5 = detectar_tcb(df, sym, btc["estado"])
+        if r5:
+            tcb_detectados.append(r5)
+
+    # === ESCANEO ACUM (velas 4h) ===
+    print(f"\n📊 Generando velas 4h para ACUM...")
+    velas_4h = hacer_velas_4h(df)
+    acum_list = detectar_acumulacion(velas_4h, btc["estado"])
+    acumulaciones.extend(acum_list)
+
+    print(f"\n   🎯 SUELOS:        {len(suelos)}")
+    print(f"   🚨 FUERTES:       {len(fuertes)}")
+    print(f"   🟡 TEMPRANAS:     {len(tempranas)}")
+    print(f"   📐 REENTRADAS:    {len(reentradas)}")
+    print(f"   🚀 ACUMULACIONES: {len(acumulaciones)}")
+    print(f"   🚀 TCB DETECTADOS: {len(tcb_detectados)}")
 
     # ═══════════════════════════════════════════════════════════
-    # BLOQUEO GRADUAL SEGÚN xk1 (AJUSTADO V2)
+    # BLOQUEO GRADUAL SEGÚN xk1
     # ═══════════════════════════════════════════════════════════
     enviadas = 0
     btc_estado = btc.get("estado", "FLAT")
@@ -884,12 +1157,14 @@ def main():
     bloquear_reentradas = btc_estado == "DOWN"
 
     print(f"\n📋 Política {a_real('xk1')} {btc_estado}:")
-    print(f"   SUELOS:     ✅ siempre permitidos (preparación)")
-    print(f"   TEMPRANAS:  {'🚫 bloqueadas' if bloquear_tempranas else '✅ permitidas'}")
-    print(f"   FUERTES:    {'🚫 bloqueadas' if bloquear_fuertes else '✅ permitidas'}")
-    print(f"   REENTRADAS: {'🚫 bloqueadas' if bloquear_reentradas else '✅ permitidas'}")
+    print(f"   SUELOS:        ✅ siempre permitidos (preparación)")
+    print(f"   TEMPRANAS:     {'🚫 bloqueadas' if bloquear_tempranas else '✅ permitidas'}")
+    print(f"   FUERTES:       {'🚫 bloqueadas' if bloquear_fuertes else '✅ permitidas'}")
+    print(f"   REENTRADAS:    {'🚫 bloqueadas' if bloquear_reentradas else '✅ permitidas'}")
+    print(f"   ACUMULACIONES: {'✅ permitidas' if btc_estado in ('FLAT', 'DOWN_SOFT', 'RECOVERY') else '🚫 bloqueadas (BTC ' + btc_estado + ')'}")
+    print(f"   TCB:           {'✅ permitidos' if btc_estado in ('FLAT', 'DOWN_SOFT', 'RECOVERY') else '🚫 bloqueados (BTC ' + btc_estado + ')'}")
 
-    # ─── SUELOS (nuevo) ───
+    # ─── SUELOS ───
     suelos.sort(key=lambda x: x["dist_min"])
     for a in suelos[:MAX_POR_TIPO]:
         if not paso_cooldown(alertas_state, a["symbol"], "SUELO", COOLDOWN_SUELO):
@@ -900,6 +1175,29 @@ def main():
             print(f"   🎯 SUELO: {a_real(a['symbol'])} "
                   f"(24h {a['cambio_24h']:+.1f}% | "
                   f"vol {a['compresion_vol']:.2f}x)")
+
+    # ─── ACUMULACIONES ───
+    acumulaciones.sort(key=lambda x: (-x["pos_rango"], x["vol_cv"]))
+    for a in acumulaciones[:MAX_POR_TIPO]:
+        if not paso_cooldown(alertas_state, a["symbol"], "ACUM", COOLDOWN_ACUM):
+            continue
+        if enviar_alerta_acumulacion(a, btc):
+            enviadas += 1
+            registrar_alerta(alertas_state, a["symbol"], "ACUM")
+            print(f"   🚀 ACUM: {a_real(a['symbol'])} "
+                  f"(rango {a['rango_pct']:.1f}% | pos {a['pos_rango']:.0f}% | "
+                  f"vol cv {a['vol_cv']:.2f})")
+
+    # ─── TCB ───
+    tcb_detectados.sort(key=lambda x: -x["rebote_pct"])
+    for a in tcb_detectados[:MAX_POR_TIPO]:
+        if not paso_cooldown(alertas_state, a["symbol"], "TCB", COOLDOWN_TCB):
+            continue
+        if enviar_alerta_tcb(a, btc):
+            enviadas += 1
+            registrar_alerta(alertas_state, a["symbol"], "TCB")
+            print(f"   🚀 TCB: {a_real(a['symbol'])} "
+                  f"(fibo {a['fibo_retroceso']:.1f}% | rebote {a['rebote_pct']:+.1f}%)")
 
     # ─── FUERTES ───
     if not bloquear_fuertes:
@@ -945,97 +1243,6 @@ def main():
 
     # === GUARDAR ESTADO DE ALERTAS ===
     guardar_alertas_state(alertas_state)
-
-    # ═══════════════════════════════════════════════════════════
-    # 🔬 DIAGNÓSTICO DE FILTROS (NUEVO - SOLO LECTURA)
-    # ═══════════════════════════════════════════════════════════
-    print(f"\n🔬 DIAGNÓSTICO DE FILTROS (por qué no dispara cada moneda):")
-    debug = {}
-    top_cambios = []
-
-    for sym in todas:
-        if sym.upper() in EXCLUIR or sym.upper() == "xk1":
-            continue
-
-        g = df[df["symbol"] == sym].sort_values("timestamp")
-        if len(g) < 40:
-            debug["1_muy_pocos_datos"] = debug.get("1_muy_pocos_datos", 0) + 1
-            continue
-
-        ts_max = g["timestamp"].max()
-        if not es_fresco(ts_max):
-            debug["2_no_fresco"] = debug.get("2_no_fresco", 0) + 1
-            continue
-
-        mc = g.iloc[-1].get("market_cap", 0) or 0
-        rank = g.iloc[-1].get("cmc_rank", 9999)
-        if not cumple_calidad(mc, rank):
-            debug["3_no_calidad"] = debug.get("3_no_calidad", 0) + 1
-            continue
-
-        corte_1h = ts_max - timedelta(hours=1)
-        rec_1h = g[g["timestamp"] >= corte_1h]
-        if len(rec_1h) < 3:
-            debug["4_sin_rec_1h"] = debug.get("4_sin_rec_1h", 0) + 1
-            continue
-
-        p_ini_1h = rec_1h.iloc[0]["price"]
-        p_fin = rec_1h.iloc[-1]["price"]
-        if p_ini_1h <= 0:
-            debug["5_precio_invalido"] = debug.get("5_precio_invalido", 0) + 1
-            continue
-
-        cambio_1h = ((p_fin - p_ini_1h) / p_ini_1h) * 100
-
-        top_cambios.append((a_real(sym), cambio_1h, int(rank), p_fin))
-
-        if cambio_1h < TEMPRANA_CAMBIO_1H:
-            debug["6_cambio_1h_pequeno"] = debug.get("6_cambio_1h_pequeno", 0) + 1
-            continue
-
-        corte_4h = ts_max - timedelta(hours=4)
-        rec_4h = g[g["timestamp"] >= corte_4h]
-        if len(rec_4h) < 3:
-            debug["7_sin_rec_4h"] = debug.get("7_sin_rec_4h", 0) + 1
-            continue
-
-        p_ini_4h = rec_4h.iloc[0]["price"]
-        cambio_4h = ((p_fin - p_ini_4h) / p_ini_4h) * 100 if p_ini_4h > 0 else 0
-
-        if cambio_4h > MAX_CAMBIO_4H:
-            debug["8_cambio_4h_grande"] = debug.get("8_cambio_4h_grande", 0) + 1
-            continue
-
-        corte_24h = ts_max - timedelta(hours=24)
-        rec_24h = g[g["timestamp"] >= corte_24h]
-        p_ini_24h = rec_24h.iloc[0]["price"] if len(rec_24h) > 0 else p_ini_4h
-        cambio_24h = ((p_fin - p_ini_24h) / p_ini_24h) * 100 if p_ini_24h > 0 else 0
-
-        if cambio_24h > MAX_CAMBIO_24H:
-            debug["9_cambio_24h_grande"] = debug.get("9_cambio_24h_grande", 0) + 1
-            continue
-
-        v_base = g["volume_24h"].tail(20).mean()
-        v_ult = g["volume_24h"].iloc[-1]
-        vol_ratio = v_ult / v_base if v_base > 0 else 0
-
-        if v_ult < VOL_ABS_MIN:
-            debug["10_vol_abs_pequeno"] = debug.get("10_vol_abs_pequeno", 0) + 1
-            continue
-
-        if vol_ratio < TEMPRANA_VOL_MIN:
-            debug["11_vol_ratio_pequeno"] = debug.get("11_vol_ratio_pequeno", 0) + 1
-            continue
-
-        debug["12_PASO_TODOS_LOS_FILTROS"] = debug.get("12_PASO_TODOS_LOS_FILTROS", 0) + 1
-
-    for k in sorted(debug.keys()):
-        print(f"   {k}: {debug[k]}")
-
-    print(f"\n📈 TOP 15 CAMBIOS 1H (los más cercanos a disparar):")
-    top_cambios.sort(key=lambda x: -x[1])
-    for sym_real, cambio, rank, precio in top_cambios[:15]:
-        print(f"   {sym_real:10s} rank {rank:4d} | 1h: {cambio:+7.2f}% | ${precio:.6f}")
 
     # === RESUMEN ===
     print(f"\n{'='*70}")
