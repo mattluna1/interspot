@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALERTA V3 — SUELO + ARRANQUE + REENTRADA + ACUMULACIÓN + DOBLE_FIBO + BTC 6 ESTADOS
+ALERTA V3 — SUELO + ARRANQUE + REENTRADA + ACUMULACIÓN + BTC 6 ESTADOS
 
 Señales:
   1. 🎯 SUELO         → caída fuerte + frenado + volumen decreciente
@@ -9,7 +9,7 @@ Señales:
   3. 🚨 FUERTE        → arranque confirmado (3.0% / 1.3x+)
   4. 📐 REENTRADA     → rebote en Fibo 38-70%
   5. 🚀 ACUMULACIÓN   → QNT-style (rango comprimido + ruptura)
-  6. 📐 DOBLE FIBO    → 2+ toques al Fibo 50-61.8% + rebote
+  6. 📐 DOBLE FIBO    → doble toque al Fibo 50-61.8% + rebote
 
 BTC análisis (6 estados): UP / FLAT / DOWN_SOFT / DOWN / BOTTOM / RECOVERY
 
@@ -18,7 +18,8 @@ Bloqueo gradual por BTC:
   🟡 DOWN_SOFT → bloquea TEMPRANAS
   Otros        → permite todas
 
-ACUMULACIÓN y DOBLE_FIBO: solo si BTC en FLAT, DOWN_SOFT o RECOVERY
+ACUMULACIÓN: solo si BTC en FLAT, DOWN_SOFT o RECOVERY
+(validado: 46.2% win rate en RECOVERY, 18.4% en FLAT, 9.4% en UP)
 
 Sistema de alias: lee secretos.json o SECRETOS_JSON (GitHub Secrets)
 """
@@ -155,17 +156,6 @@ ACUM_RUPTURA_MIN    = 4.0
 
 
 # ============================================================
-# UMBRALES — DOBLE TOQUE FIBO
-# ============================================================
-
-DOBLE_FIBO_RANGO_MIN    = 10.0   # rally mínimo 10%
-DOBLE_FIBO_TOLERANCIA   = 0.03   # 3% de tolerancia al Fibo
-DOBLE_FIBO_TOQUES_MIN   = 2      # al menos 2 toques
-DOBLE_FIBO_REBOTE_MIN   = 3.0    # rebote mínimo 3%
-DOBLE_FIBO_VENTANA_H    = 72     # ventana de análisis
-
-
-# ============================================================
 # FILTROS COMUNES
 # ============================================================
 
@@ -182,7 +172,6 @@ COOLDOWN_SUELO      = 6
 COOLDOWN_ARRANQUE   = 4
 COOLDOWN_REENTRADA  = 8
 COOLDOWN_ACUM       = 12
-COOLDOWN_DOBLE_FIBO = 12
 
 
 # ============================================================
@@ -791,4 +780,503 @@ def detectar_acumulacion(velas_4h, btc_estado):
             continue
 
         vol_medio = ultimas["volume"].mean()
-        vol_std = ultimas
+        vol_std = ultimas["volume"].std()
+        vol_cv = vol_std / vol_medio if vol_medio > 0 else 1
+
+        if vol_cv > ACUM_VOL_CV_MAX:
+            continue
+
+        cambio_reciente = 0
+        if len(g) >= 5:
+            cambio_reciente = ((g.iloc[-1]["close"] - g.iloc[-5]["close"])
+                               / g.iloc[-5]["close"]) * 100
+
+        if cambio_reciente < ACUM_RUPTURA_MIN and pos_rango < 90:
+            continue
+
+        resultados.append({
+            "tipo": "ACUMULACION",
+            "symbol": sym,
+            "rango_pct": rango_pct,
+            "pos_rango": pos_rango,
+            "vol_medio_m": vol_medio / 1e6,
+            "vol_cv": vol_cv,
+            "cambio_reciente": cambio_reciente,
+            "p_actual": p_actual,
+            "p_max": p_max,
+            "p_min": p_min,
+            "rank": int(rank),
+            "mc": mc,
+        })
+
+    return resultados
+
+
+# ============================================================
+# DETECCIÓN — DOBLE TOQUE FIBO (QNT-style refinado)
+# ============================================================
+
+def detectar_doble_toque_fibo(df, symbol, btc_estado):
+    """
+    Detecta acumulación con DOBLE TOQUE al Fibo (50-61.8%).
+    Requiere ≥2 toques al mismo nivel + rebote ≥3%.
+    Solo si BTC en FLAT, DOWN_SOFT o RECOVERY.
+    """
+    if btc_estado not in ("FLAT", "DOWN_SOFT", "RECOVERY"):
+        return None
+
+    g = df[df["symbol"] == symbol].sort_values("timestamp")
+    if len(g) < 100:
+        return None
+
+    ts_max = g["timestamp"].max()
+    if not es_fresco(ts_max):
+        return None
+
+    mc = g.iloc[-1].get("market_cap", 0) or 0
+    rank = g.iloc[-1].get("cmc_rank", 9999)
+    if not cumple_calidad(mc, rank):
+        return None
+
+    # Ventana: últimas 72h
+    corte_72 = ts_max - timedelta(hours=72)
+    rec_72 = g[g["timestamp"] >= corte_72]
+    if len(rec_72) < 20:
+        return None
+
+    # Rally previo (mín → máx)
+    p_min = rec_72["price"].min()
+    idx_min = rec_72["price"].idxmin()
+    p_max = rec_72.loc[idx_min:]["price"].max()
+    idx_max = rec_72.loc[idx_min:]["price"].idxmax()
+
+    if p_min <= 0 or p_max <= p_min:
+        return None
+
+    rango = p_max - p_min
+    rango_pct = (rango / p_min) * 100
+
+    if rango_pct < 10:  # al menos 10% de rally
+        return None
+
+    # Fibos
+    fibo_382 = p_max - rango * 0.382
+    fibo_500 = p_max - rango * 0.500
+    fibo_618 = p_max - rango * 0.618
+    fibo_786 = p_max - rango * 0.786
+
+    # Analizar corrección post-rally
+    post_rally = rec_72.loc[idx_max:].copy()
+    if len(post_rally) < 10:
+        return None
+
+    precios = post_rally["price"].values
+    p_actual = precios[-1]
+
+    # Buscar mínimos locales cerca de Fibo (tolerancia 3%)
+    tol = fibo_618 * 0.03
+    toques = 0
+
+    for i in range(2, len(precios) - 2):
+        p = precios[i]
+        es_min_local = (p <= precios[i-1] and p <= precios[i-2] and
+                        p <= precios[i+1] and p <= precios[i+2])
+        if not es_min_local:
+            continue
+
+        # ¿Cerca de 61.8%?
+        if abs(p - fibo_618) <= tol:
+            toques += 1
+        # ¿Entre 50% y 61.8%?
+        elif fibo_618 <= p <= fibo_500:
+            toques += 1
+        # ¿Cerca del 50%?
+        elif abs(p - fibo_500) <= tol:
+            toques += 1
+
+    if toques < 2:
+        return None
+
+    # Posición en rango
+    pos_rango = ((p_actual - p_min) / rango) * 100 if rango > 0 else 0
+
+    # Rebote desde el Fibo
+    rebote_pct = ((p_actual - fibo_618) / fibo_618) * 100
+
+    if rebote_pct < 3:
+        return None
+
+    return {
+        "tipo": "DOBLE_FIBO",
+        "symbol": symbol,
+        "rango_pct": rango_pct,
+        "p_min": p_min,
+        "p_max": p_max,
+        "p_actual": p_actual,
+        "fibo_382": fibo_382,
+        "fibo_500": fibo_500,
+        "fibo_618": fibo_618,
+        "fibo_786": fibo_786,
+        "toques": toques,
+        "rebote_pct": rebote_pct,
+        "pos_rango": pos_rango,
+        "vol_m": g["volume_24h"].iloc[-1] / 1e6,
+        "cmc_rank": int(rank),
+        "market_cap_m": mc / 1e6,
+        "ts": ts_max,
+    }
+
+
+# ============================================================
+# ENVÍO DE MENSAJES
+# ============================================================
+
+def enviar_alerta_suelo(a, btc):
+    hora_lima = (a["ts"] - timedelta(hours=5)).strftime("%H:%M")
+    linea_btc, aviso_btc = _contexto_btc(btc)
+
+    msg = (
+        f"🎯 SUELO DETECTADO\n"
+        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📉 Caída 24h: {a['cambio_24h']:+.2f}%\n"
+        f"📊 Frenado 4h: {a['cambio_4h']:+.2f}%\n"
+        f"💰 Precio: ${a['precio']:.6f}\n"
+        f"🏦 Cerca del mínimo: +{a['dist_min']:.2f}%\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Volumen decreciente: {a['compresion_vol']:.2f}x\n"
+        f"📊 Rango comprimido: {a['compresion_rango']:.2f}x\n"
+        f"💧 Vol: ${a['vol_m']:.1f}M\n"
+        f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"{linea_btc}\n"
+        f"🕐 {hora_lima} Lima\n"
+        f"⏳ ESPERAR CONFIRMACIÓN de arranque"
+    )
+    if aviso_btc:
+        msg += f"\n{aviso_btc}"
+
+    return enviar_telegram(msg)
+
+
+def enviar_alerta_arranque(a, btc):
+    hora_lima = (a["ts"] - timedelta(hours=5)).strftime("%H:%M")
+
+    if a["señal"] == "FUERTE":
+        emoji = "🚨"
+        titulo = "ARRANQUE FUERTE"
+        nota = "✅ Volumen CONFIRMA"
+    else:
+        emoji = "🟡"
+        titulo = "ARRANQUE TEMPRANO"
+        nota = "⚠️ Verificar gráfico"
+
+    linea_btc, aviso_btc = _contexto_btc(btc)
+
+    msg = (
+        f"{emoji} {titulo}\n"
+        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
+        f"📈 +{a['cambio_1h']:.2f}% en 1h\n"
+        f"📊 4h: {a['cambio_4h']:+.2f}% | 24h: {a['cambio_24h']:+.2f}%\n"
+        f"💰 ${a['precio']:.6f}\n"
+        f"📊 Vol: {a['vol_ratio']:.2f}x (${a['vol_m']:.1f}M)\n"
+        f"🏦 MC: {a['market_cap_m']:.1f}M\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"{linea_btc}\n"
+        f"🕐 {hora_lima} Lima\n"
+        f"{nota}"
+    )
+    if aviso_btc:
+        msg += f"\n{aviso_btc}"
+
+    return enviar_telegram(msg)
+
+
+def enviar_alerta_reentrada(a, btc):
+    hora_lima = (a["ts"] - timedelta(hours=5)).strftime("%H:%M")
+    linea_btc, aviso_btc = _contexto_btc(btc)
+
+    msg = (
+        f"📐 REENTRADA FIBO\n"
+        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Pump previo 48h: +{a['pump_total']:.1f}%\n"
+        f"   Máx: ${a['p_max']:.6f}\n"
+        f"   Mín: ${a['p_min']:.6f}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 Fibo actual: {a['pos_actual']:.1f}% (objetivo 61.8%)\n"
+        f"💰 Precio: ${a['p_actual']:.6f}\n"
+        f"📉 Niveles clave:\n"
+        f"   • 38.2% → ${a['fibo_382']:.6f}\n"
+        f"   • 50.0% → ${a['fibo_500']:.6f}\n"
+        f"   • 61.8% → ${a['fibo_618']:.6f}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📈 Rebote: +{a['rebote_pct']:.2f}% desde pullback\n"
+        f"📊 Vol: {a['vol_ratio']:.2f}x (${a['vol_m']:.1f}M)\n"
+        f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"{linea_btc}\n"
+        f"🕐 {hora_lima} Lima"
+    )
+    if aviso_btc:
+        msg += f"\n{aviso_btc}"
+
+    return enviar_telegram(msg)
+
+
+def enviar_alerta_acumulacion(a, btc):
+    hora_lima = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%H:%M")
+    linea_btc, aviso_btc = _contexto_btc(btc)
+
+    msg = (
+        f"🚀 ACUMULACIÓN DETECTADA\n"
+        f"🪙 {a_real(a['symbol'])} (rank {a['rank']})\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Rango: {a['rango_pct']:.1f}%\n"
+        f"🎯 Posición: {a['pos_rango']:.0f}% del rango\n"
+        f"📈 Cambio reciente: {a['cambio_reciente']:+.2f}%\n"
+        f"💧 Volumen medio: ${a['vol_medio_m']:.1f}M\n"
+        f"📊 Consistencia: {a['vol_cv']:.2f}\n"
+        f"💰 Precio: ${a['p_actual']:.6f}\n"
+        f"🎯 Resistencia: ${a['p_max']:.6f}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"{linea_btc}\n"
+        f"🕐 {hora_lima} Lima\n"
+        f"💡 QNT-style: posible explosión"
+    )
+    if aviso_btc:
+        msg += f"\n{aviso_btc}"
+
+    return enviar_telegram(msg)
+
+
+def enviar_alerta_doble_fibo(a, btc):
+    hora_lima = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%H:%M")
+    linea_btc, aviso_btc = _contexto_btc(btc)
+
+    msg = (
+        f"📐 DOBLE TOQUE FIBO\n"
+        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Rally previo: +{a['rango_pct']:.1f}%\n"
+        f"   Máx: ${a['p_max']:.6f}\n"
+        f"   Mín: ${a['p_min']:.6f}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 TOQUES AL SOPORTE: {a['toques']}\n"
+        f"   • Fibo 61.8%: ${a['fibo_618']:.6f}\n"
+        f"   • Fibo 50.0%: ${a['fibo_500']:.6f}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 Precio actual: ${a['p_actual']:.6f}\n"
+        f"📈 Rebote: +{a['rebote_pct']:.2f}%\n"
+        f"🎯 Posición: {a['pos_rango']:.0f}% del rango\n"
+        f"💧 Vol: ${a['vol_m']:.1f}M\n"
+        f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"{linea_btc}\n"
+        f"🕐 {hora_lima} Lima\n"
+        f"✅ SOPORTE CONFIRMADO ({a['toques']} toques)"
+    )
+    if aviso_btc:
+        msg += f"\n{aviso_btc}"
+
+    return enviar_telegram(msg)
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+    ahora = datetime.now(timezone.utc)
+    ahora_lima = ahora - timedelta(hours=5)
+
+    print(f"\n{'='*70}")
+    print(f"🎯 SUELO + ⚡ ARRANQUE + 📐 REENTRADA + 🚀 ACUM — xk1 6 ESTADOS")
+    print(f"   UTC:  {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"   Lima: {ahora_lima.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"{'='*70}")
+
+    df = cargar_datos()
+    print(f"📊 Total: {len(df):,} filas | {df['symbol'].nunique()} monedas")
+
+    # === ANÁLISIS xk1 ===
+    btc = analizar_btc(df)
+    linea_btc, aviso_btc = _contexto_btc(btc)
+
+    print(f"\n🔍 CONTEXTO {a_real('xk1')}:")
+    print(f"   {linea_btc}")
+    if aviso_btc:
+        print(f"   {aviso_btc}")
+
+    # === AVISO DE CAMBIO DE ESTADO xk1 ===
+    estado_previo = cargar_btc_estado_previo()
+    if estado_previo and estado_previo != btc["estado"]:
+        print(f"\n🔄 Cambio {a_real('xk1')}: {estado_previo} → {btc['estado']}")
+        if enviar_alerta_cambio_btc(estado_previo, btc):
+            print(f"   📱 Alerta de cambio {a_real('xk1')} enviada")
+    guardar_btc_estado(btc["estado"])
+
+    # === CARGAR ESTADO DE ALERTAS (cooldown) ===
+    alertas_state = cargar_alertas_state()
+
+    # === ESCANEO ===
+    todas = df["symbol"].unique()
+    print(f"\n🔍 Escaneando {len(todas)} monedas...")
+
+    suelos = []
+    fuertes = []
+    tempranas = []
+    reentradas = []
+    acumulaciones = []
+    doble_fibos = []
+
+    for sym in todas:
+        if sym.upper() in EXCLUIR or sym.upper() == "xk1":
+            continue
+
+        r0 = detectar_suelo(df, sym)
+        if r0:
+            suelos.append(r0)
+
+        r1 = detectar_arranque(df, sym)
+        if r1:
+            if r1["señal"] == "FUERTE":
+                fuertes.append(r1)
+            else:
+                tempranas.append(r1)
+
+        r2 = detectar_reentrada_fibo(df, sym)
+        if r2:
+            reentradas.append(r2)
+
+        r4 = detectar_doble_toque_fibo(df, sym, btc["estado"])
+        if r4:
+            doble_fibos.append(r4)
+
+    # === ESCANEO ACUM (velas 4h) ===
+    print(f"\n📊 Generando velas 4h para ACUM...")
+    velas_4h = hacer_velas_4h(df)
+    acum_list = detectar_acumulacion(velas_4h, btc["estado"])
+    acumulaciones.extend(acum_list)
+
+    print(f"\n   🎯 SUELOS:        {len(suelos)}")
+    print(f"   🚨 FUERTES:       {len(fuertes)}")
+    print(f"   🟡 TEMPRANAS:     {len(tempranas)}")
+    print(f"   📐 REENTRADAS:    {len(reentradas)}")
+    print(f"   🚀 ACUMULACIONES: {len(acumulaciones)}")
+    print(f"   📐 DOBLE FIBO:    {len(doble_fibos)}")
+
+    # ═══════════════════════════════════════════════════════════
+    # BLOQUEO GRADUAL SEGÚN xk1
+    # ═══════════════════════════════════════════════════════════
+    enviadas = 0
+    btc_estado = btc.get("estado", "FLAT")
+
+    bloquear_tempranas  = btc_estado in ("DOWN", "DOWN_SOFT")
+    bloquear_fuertes    = btc_estado == "DOWN"
+    bloquear_reentradas = btc_estado == "DOWN"
+
+    print(f"\n📋 Política {a_real('xk1')} {btc_estado}:")
+    print(f"   SUELOS:        ✅ siempre permitidos (preparación)")
+    print(f"   TEMPRANAS:     {'🚫 bloqueadas' if bloquear_tempranas else '✅ permitidas'}")
+    print(f"   FUERTES:       {'🚫 bloqueadas' if bloquear_fuertes else '✅ permitidas'}")
+    print(f"   REENTRADAS:    {'🚫 bloqueadas' if bloquear_reentradas else '✅ permitidas'}")
+    print(f"   ACUMULACIONES: {'✅ permitidas' if btc_estado in ('FLAT', 'DOWN_SOFT', 'RECOVERY') else '🚫 bloqueadas (BTC ' + btc_estado + ')'}")
+    print(f"   DOBLE FIBO:    {'✅ permitidas' if btc_estado in ('FLAT', 'DOWN_SOFT', 'RECOVERY') else '🚫 bloqueadas (BTC ' + btc_estado + ')'}")
+
+    # ─── SUELOS ───
+    suelos.sort(key=lambda x: x["dist_min"])
+    for a in suelos[:MAX_POR_TIPO]:
+        if not paso_cooldown(alertas_state, a["symbol"], "SUELO", COOLDOWN_SUELO):
+            continue
+        if enviar_alerta_suelo(a, btc):
+            enviadas += 1
+            registrar_alerta(alertas_state, a["symbol"], "SUELO")
+            print(f"   🎯 SUELO: {a_real(a['symbol'])} "
+                  f"(24h {a['cambio_24h']:+.1f}% | "
+                  f"vol {a['compresion_vol']:.2f}x)")
+
+    # ─── ACUMULACIONES ───
+    acumulaciones.sort(key=lambda x: (-x["pos_rango"], x["vol_cv"]))
+    for a in acumulaciones[:MAX_POR_TIPO]:
+        if not paso_cooldown(alertas_state, a["symbol"], "ACUM", COOLDOWN_ACUM):
+            continue
+        if enviar_alerta_acumulacion(a, btc):
+            enviadas += 1
+            registrar_alerta(alertas_state, a["symbol"], "ACUM")
+            print(f"   🚀 ACUM: {a_real(a['symbol'])} "
+                  f"(rango {a['rango_pct']:.1f}% | pos {a['pos_rango']:.0f}% | "
+                  f"vol cv {a['vol_cv']:.2f})")
+
+    # ─── DOBLE FIBO ───
+    doble_fibos.sort(key=lambda x: -x["toques"])
+    for a in doble_fibos[:MAX_POR_TIPO]:
+        if not paso_cooldown(alertas_state, a["symbol"], "DOBLE_FIBO", COOLDOWN_REENTRADA):
+            continue
+        if enviar_alerta_doble_fibo(a, btc):
+            enviadas += 1
+            registrar_alerta(alertas_state, a["symbol"], "DOBLE_FIBO")
+            print(f"   📐 DOBLE FIBO: {a_real(a['symbol'])} "
+                  f"(toques {a['toques']} | rebote {a['rebote_pct']:+.1f}%)")
+
+    # ─── FUERTES ───
+    if not bloquear_fuertes:
+        fuertes.sort(key=lambda x: -x["cambio_1h"])
+        for a in fuertes[:MAX_POR_TIPO]:
+            if not paso_cooldown(alertas_state, a["symbol"], "ARRANQUE", COOLDOWN_ARRANQUE):
+                continue
+            if enviar_alerta_arranque(a, btc):
+                enviadas += 1
+                registrar_alerta(alertas_state, a["symbol"], "ARRANQUE")
+                print(f"   🚨 FUERTE: {a_real(a['symbol'])} (+{a['cambio_1h']:.2f}% | "
+                      f"vol {a['vol_ratio']:.2f}x)")
+    elif fuertes:
+        print(f"\n   ⏸️ {len(fuertes)} FUERTES bloqueadas por {a_real('xk1')} {btc_estado}")
+
+    # ─── TEMPRANAS ───
+    if not bloquear_tempranas:
+        tempranas.sort(key=lambda x: -x["cambio_1h"])
+        for a in tempranas[:MAX_POR_TIPO]:
+            if not paso_cooldown(alertas_state, a["symbol"], "ARRANQUE", COOLDOWN_ARRANQUE):
+                continue
+            if enviar_alerta_arranque(a, btc):
+                enviadas += 1
+                registrar_alerta(alertas_state, a["symbol"], "ARRANQUE")
+                print(f"   🟡 TEMPRANA: {a_real(a['symbol'])} (+{a['cambio_1h']:.2f}% | "
+                      f"vol {a['vol_ratio']:.2f}x)")
+    elif tempranas:
+        print(f"   ⏸️ {len(tempranas)} TEMPRANAS bloqueadas por {a_real('xk1')} {btc_estado}")
+
+    # ─── REENTRADAS ───
+    if not bloquear_reentradas:
+        reentradas.sort(key=lambda x: (x["distancia_fibo"], -x["vol_ratio"]))
+        for a in reentradas[:MAX_POR_TIPO]:
+            if not paso_cooldown(alertas_state, a["symbol"], "REENTRADA", COOLDOWN_REENTRADA):
+                continue
+            if enviar_alerta_reentrada(a, btc):
+                enviadas += 1
+                registrar_alerta(alertas_state, a["symbol"], "REENTRADA")
+                print(f"   📐 REENTRADA: {a_real(a['symbol'])} "
+                      f"(fibo {a['pos_actual']:.1f}% | vol {a['vol_ratio']:.2f}x)")
+    elif reentradas:
+        print(f"   ⏸️ {len(reentradas)} REENTRADAS bloqueadas por {a_real('xk1')} {btc_estado}")
+
+    # === GUARDAR ESTADO DE ALERTAS ===
+    guardar_alertas_state(alertas_state)
+
+    # === RESUMEN ===
+    print(f"\n{'='*70}")
+    print(f"📢 RESUMEN")
+    print(f"   {linea_btc}")
+    print(f"   Alertas enviadas: {enviadas}")
+    print(f"{'='*70}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"\n❌ ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
