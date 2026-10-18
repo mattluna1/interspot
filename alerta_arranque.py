@@ -148,15 +148,16 @@ ACUM_RUPTURA_MIN    = 4.0
 
 
 # ============================================================
-# UMBRALES — TCB (retroceso Fibo 70-82%)
+# UMBRALES — TCB (retroceso Fibo con consolidación)
 # ============================================================
 
-TCB_FIBO_MIN        = 70.0
-TCB_FIBO_MAX        = 82.0
-TCB_RALLY_MIN_PCT   = 10.0
-TCB_VENTANA_H       = 72
-TCB_REBOTE_MIN_PCT  = 1.5     # ← el cambio
-TCB_VOL_MIN         = 1.0     # ← filtro de volumen
+TCB_FIBO_MIN            = 58.0
+TCB_FIBO_MAX            = 82.0
+TCB_RALLY_MIN_PCT       = 10.0
+TCB_VENTANA_H           = 72
+TCB_REBOTE_MIN_PCT      = 2.0      # antes 1.5 → ahora 2% (consolidación)
+TCB_VOL_MIN             = 1.0
+TCB_CONSOLIDACION_VELAS = 8        # 8 velas (~40 min) para confirmar rebote
 
 
 # ============================================================
@@ -823,7 +824,8 @@ def detectar_acumulacion(velas_4h, btc_estado):
 
 def detectar_tcb(df, symbol, btc_estado):
     """
-    Detecta retroceso Fibo en zona 70-82% + rebote ≥3%.
+    Detecta retroceso Fibo con consolidación (rebote ≥2% en 8 velas).
+    Diferencia entre zona 61.8% y 78.6%.
     Solo si BTC en FLAT, DOWN_SOFT o RECOVERY.
     """
     if btc_estado not in ("FLAT", "DOWN_SOFT", "RECOVERY"):
@@ -875,21 +877,28 @@ def detectar_tcb(df, symbol, btc_estado):
     # Retroceso Fibo actual
     fibo_retroceso = ((p_max - p_min_corr) / rango) * 100
 
-    # Zona objetivo: 70-82%
+    # Zona objetivo: 58-82%
     if not (TCB_FIBO_MIN <= fibo_retroceso <= TCB_FIBO_MAX):
         return None
 
-    # Rebote desde el mínimo de corrección
+    # === CONSOLIDACIÓN: rebote en ventana de velas ===
     idx_min_corr = post_rally["price"].idxmin()
     post_min = rec_72.loc[idx_min_corr:]["price"]
     if len(post_min) < 2:
         return None
 
+    # Buscar rebote en las primeras TCB_CONSOLIDACION_VELAS velas
+    ventana_rebote = post_min.head(TCB_CONSOLIDACION_VELAS)
+    p_rebote_ventana = ventana_rebote.max()
+    rebote_pct_ventana = ((p_rebote_ventana - p_min_corr) / p_min_corr) * 100
+
+    # Si no consolida en la ventana, descartar
+    if rebote_pct_ventana < TCB_REBOTE_MIN_PCT:
+        return None
+
+    # Rebote máximo (para reportar)
     p_rebote = post_min.max()
     rebote_pct = ((p_rebote - p_min_corr) / p_min_corr) * 100
-
-    if rebote_pct < TCB_REBOTE_MIN_PCT:
-        return None
 
     # Filtro de volumen
     v_base = g["volume_24h"].tail(20).mean()
@@ -899,6 +908,14 @@ def detectar_tcb(df, symbol, btc_estado):
         return None
 
     p_actual = rec_72.iloc[-1]["price"]
+
+    # Clasificar zona Fibo
+    if fibo_retroceso < 65:
+        zona_fibo = "61.8%"
+    elif fibo_retroceso < 75:
+        zona_fibo = "intermedia"
+    else:
+        zona_fibo = "78.6%"
 
     return {
         "tipo": "TCB",
@@ -910,7 +927,9 @@ def detectar_tcb(df, symbol, btc_estado):
         "p_min_corr": p_min_corr,
         "p_rebote": p_rebote,
         "fibo_retroceso": fibo_retroceso,
+        "zona_fibo": zona_fibo,
         "rebote_pct": rebote_pct,
+        "rebote_pct_ventana": rebote_pct_ventana,
         "vol_ratio": vol_ratio,
         "vol_m": v_ult / 1e6,
         "cmc_rank": int(rank),
