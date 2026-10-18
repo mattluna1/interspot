@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALERTA V4 — SUELO + ARRANQUE + REENTRADA + ACUMULACIÓN + TCB + BTC 6 ESTADOS
+ALERTA V5 — SUELO + ARRANQUE + REENTRADA + ACUMULACIÓN + TCB (2 etapas) + BTC 6 ESTADOS
 
 Señales:
   1. 🎯 SUELO         → caída fuerte + frenado + volumen decreciente
@@ -9,7 +9,9 @@ Señales:
   3. 🚨 FUERTE        → arranque confirmado (3.0% / 1.3x+)
   4. 📐 REENTRADA     → rebote en Fibo 38-70%
   5. 🚀 ACUMULACIÓN   → QNT-style (rango comprimido + ruptura)
-  6. 🚀 TCB DETECTADO → retroceso Fibo 70-82% + rebote ≥3%
+  6. 🚀 TCB           → dos etapas:
+       - TCB_TOQUE: toque al 78.6% (alerta inmediata)
+       - TCB_CONFIRMADO: 2 velas después, si hay rebote ≥2%
 
 BTC análisis (6 estados): UP / FLAT / DOWN_SOFT / DOWN / BOTTOM / RECOVERY
 
@@ -148,16 +150,16 @@ ACUM_RUPTURA_MIN    = 4.0
 
 
 # ============================================================
-# UMBRALES — TCB (retroceso Fibo con consolidación)
+# UMBRALES — TCB (retroceso Fibo con confirmación en 2 etapas)
 # ============================================================
 
 TCB_FIBO_MIN            = 58.0
 TCB_FIBO_MAX            = 82.0
 TCB_RALLY_MIN_PCT       = 10.0
 TCB_VENTANA_H           = 72
-TCB_REBOTE_MIN_PCT      = 2.0      # antes 1.5 → ahora 2% (consolidación)
+TCB_REBOTE_MIN_PCT      = 2.0      # rebote mínimo para confirmar
 TCB_VOL_MIN             = 1.0
-TCB_CONSOLIDACION_VELAS = 8        # 8 velas (~40 min) para confirmar rebote
+TCB_CONFIRMACION_VELAS  = 2        # 2 velas (~10 min) para confirmar rebote
 
 
 # ============================================================
@@ -173,11 +175,12 @@ MAX_POR_TIPO        = 10
 BTC_STATE_FILE      = "btc_state.json"
 ALERTAS_STATE_FILE  = "alertas_state.json"
 
-COOLDOWN_SUELO      = 6
-COOLDOWN_ARRANQUE   = 4
-COOLDOWN_REENTRADA  = 8
-COOLDOWN_ACUM       = 12
-COOLDOWN_TCB        = 12
+COOLDOWN_SUELO          = 6
+COOLDOWN_ARRANQUE       = 4
+COOLDOWN_REENTRADA      = 8
+COOLDOWN_ACUM           = 12
+COOLDOWN_TCB_TOQUE      = 4
+COOLDOWN_TCB_CONFIRMADO = 12
 
 
 # ============================================================
@@ -819,13 +822,14 @@ def detectar_acumulacion(velas_4h, btc_estado):
 
 
 # ============================================================
-# DETECCIÓN — TCB (retroceso Fibo 70-82%)
+# DETECCIÓN — TCB (retroceso Fibo con confirmación en 2 etapas)
 # ============================================================
 
 def detectar_tcb(df, symbol, btc_estado):
     """
-    Detecta retroceso Fibo con consolidación (rebote ≥2% en 8 velas).
-    Diferencia entre zona 61.8% y 78.6%.
+    Detecta TCB en dos etapas:
+    1. TCB_TOQUE: el precio toca el 78.6% (alerta inmediata)
+    2. TCB_CONFIRMADO: 2 velas después, si hay rebote ≥2%
     Solo si BTC en FLAT, DOWN_SOFT o RECOVERY.
     """
     if btc_estado not in ("FLAT", "DOWN_SOFT", "RECOVERY"):
@@ -881,25 +885,6 @@ def detectar_tcb(df, symbol, btc_estado):
     if not (TCB_FIBO_MIN <= fibo_retroceso <= TCB_FIBO_MAX):
         return None
 
-    # === CONSOLIDACIÓN: rebote en ventana de velas ===
-    idx_min_corr = post_rally["price"].idxmin()
-    post_min = rec_72.loc[idx_min_corr:]["price"]
-    if len(post_min) < 2:
-        return None
-
-    # Buscar rebote en las primeras TCB_CONSOLIDACION_VELAS velas
-    ventana_rebote = post_min.head(TCB_CONSOLIDACION_VELAS)
-    p_rebote_ventana = ventana_rebote.max()
-    rebote_pct_ventana = ((p_rebote_ventana - p_min_corr) / p_min_corr) * 100
-
-    # Si no consolida en la ventana, descartar
-    if rebote_pct_ventana < TCB_REBOTE_MIN_PCT:
-        return None
-
-    # Rebote máximo (para reportar)
-    p_rebote = post_min.max()
-    rebote_pct = ((p_rebote - p_min_corr) / p_min_corr) * 100
-
     # Filtro de volumen
     v_base = g["volume_24h"].tail(20).mean()
     v_ult = g["volume_24h"].iloc[-1]
@@ -909,33 +894,71 @@ def detectar_tcb(df, symbol, btc_estado):
 
     p_actual = rec_72.iloc[-1]["price"]
 
-    # Clasificar zona Fibo
+    # Clasificar zona
     if fibo_retroceso < 65:
         zona_fibo = "61.8%"
-    elif fibo_retroceso < 75:
+    elif fibo_retroceso < 74:
         zona_fibo = "intermedia"
     else:
         zona_fibo = "78.6%"
 
-    return {
-        "tipo": "TCB",
-        "symbol": symbol,
-        "rango_pct": rango_pct,
-        "p_min": p_min,
-        "p_max": p_max,
-        "p_actual": p_actual,
-        "p_min_corr": p_min_corr,
-        "p_rebote": p_rebote,
-        "fibo_retroceso": fibo_retroceso,
-        "zona_fibo": zona_fibo,
-        "rebote_pct": rebote_pct,
-        "rebote_pct_ventana": rebote_pct_ventana,
-        "vol_ratio": vol_ratio,
-        "vol_m": v_ult / 1e6,
-        "cmc_rank": int(rank),
-        "market_cap_m": mc / 1e6,
-        "ts": ts_max,
-    }
+    # === DETERMINAR ETAPA ===
+    idx_min_corr = post_rally["price"].idxmin()
+    idx_min_corr_global = idx_max + (idx_min_corr - idx_max)
+    velas_desde_toque = len(rec_72) - 1 - idx_min_corr_global
+
+    # === ETAPA 1: TOQUE (solo 78.6%, primeras 2 velas) ===
+    if zona_fibo == "78.6%" and 0 <= velas_desde_toque <= TCB_CONFIRMACION_VELAS:
+        return {
+            "tipo": "TCB_TOQUE",
+            "symbol": symbol,
+            "rango_pct": rango_pct,
+            "p_min": p_min,
+            "p_max": p_max,
+            "p_actual": p_actual,
+            "p_min_corr": p_min_corr,
+            "fibo_retroceso": fibo_retroceso,
+            "zona_fibo": zona_fibo,
+            "velas_desde_toque": velas_desde_toque,
+            "vol_ratio": vol_ratio,
+            "vol_m": v_ult / 1e6,
+            "cmc_rank": int(rank),
+            "market_cap_m": mc / 1e6,
+            "ts": ts_max,
+        }
+
+    # === ETAPA 2: CONFIRMACIÓN (solo si el toque fue hace ≤2 velas) ===
+    if zona_fibo == "78.6%" and velas_desde_toque <= TCB_CONFIRMACION_VELAS + 1:
+        post_min = rec_72.loc[idx_min_corr:]["price"]
+        if len(post_min) < 2:
+            return None
+
+        ventana_rebote = post_min.head(TCB_CONFIRMACION_VELAS + 1)
+        p_rebote = ventana_rebote.max()
+        rebote_pct = ((p_rebote - p_min_corr) / p_min_corr) * 100
+
+        if rebote_pct >= TCB_REBOTE_MIN_PCT:
+            return {
+                "tipo": "TCB_CONFIRMADO",
+                "symbol": symbol,
+                "rango_pct": rango_pct,
+                "p_min": p_min,
+                "p_max": p_max,
+                "p_actual": p_actual,
+                "p_min_corr": p_min_corr,
+                "p_rebote": p_rebote,
+                "fibo_retroceso": fibo_retroceso,
+                "zona_fibo": zona_fibo,
+                "rebote_pct": rebote_pct,
+                "velas_desde_toque": velas_desde_toque,
+                "vol_ratio": vol_ratio,
+                "vol_m": v_ult / 1e6,
+                "cmc_rank": int(rank),
+                "market_cap_m": mc / 1e6,
+                "ts": ts_max,
+            }
+
+    return None
 
 
 # ============================================================
@@ -1065,24 +1088,41 @@ def enviar_alerta_tcb(a, btc):
     hora_lima = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%H:%M")
     linea_btc, aviso_btc = _contexto_btc(btc)
 
-    msg = (
-        f"🚀 TCB DETECTADO\n"
-        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 Rally previo: +{a['rango_pct']:.1f}%\n"
-        f"   Máx: ${a['p_max']:.6f}\n"
-        f"   Mín: ${a['p_min']:.6f}\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"🎯 Retroceso Fibo: {a['fibo_retroceso']:.1f}%\n"
-        f"💰 Precio actual: ${a['p_actual']:.6f}\n"
-        f"📈 Rebote desde mín: +{a['rebote_pct']:.2f}%\n"
-        f"💧 Vol: ${a['vol_m']:.1f}M\n"
-        f"🏦 MC: ${a['market_cap_m']:.1f}M\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"{linea_btc}\n"
-        f"🕐 {hora_lima} Lima\n"
-        f"✅ ZONA ÓPTIMA 70-82%"
-    )
+    if a["tipo"] == "TCB_TOQUE":
+        msg = (
+            f"🎯 TOQUE 78.6% — {a_real(a['symbol'])}\n"
+            f"🪙 rank {a['cmc_rank']}\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 Rally previo: +{a['rango_pct']:.1f}%\n"
+            f"🎯 Retroceso: {a['fibo_retroceso']:.1f}% (78.6%)\n"
+            f"💰 Precio: ${a['p_actual']:.6f}\n"
+            f"📉 Mín corrección: ${a['p_min_corr']:.6f}\n"
+            f"⏱️ Hace {a['velas_desde_toque']} velas\n"
+            f"💧 Vol: ${a['vol_m']:.1f}M | {a['vol_ratio']:.2f}x\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"👀 REVISA EL GRÁFICO\n"
+            f"   Esperando confirmación (2 velas)\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"{linea_btc}\n"
+            f"🕐 {hora_lima} Lima"
+        )
+    else:
+        msg = (
+            f"✅ TCB CONFIRMADO — {a_real(a['symbol'])}\n"
+            f"🪙 rank {a['cmc_rank']}\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 Rally previo: +{a['rango_pct']:.1f}%\n"
+            f"🎯 Retroceso: {a['fibo_retroceso']:.1f}% ({a['zona_fibo']})\n"
+            f"💰 Precio: ${a['p_actual']:.6f}\n"
+            f"📈 Rebote confirmado: +{a['rebote_pct']:.2f}%\n"
+            f"⏱️ {a['velas_desde_toque']} velas desde el toque\n"
+            f"💧 Vol: ${a['vol_m']:.1f}M | {a['vol_ratio']:.2f}x\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"{linea_btc}\n"
+            f"🕐 {hora_lima} Lima\n"
+            f"✅ ENTRADA CONFIRMADA"
+        )
+
     if aviso_btc:
         msg += f"\n{aviso_btc}"
 
@@ -1216,16 +1256,23 @@ def main():
                   f"vol cv {a['vol_cv']:.2f})")
 
     # ─── TCB ───
-    tcb_detectados.sort(key=lambda x: -x["rebote_pct"])
     for a in tcb_detectados[:MAX_POR_TIPO]:
-        if not paso_cooldown(alertas_state, a["symbol"], "TCB", COOLDOWN_TCB):
+        tipo_cooldown = "TCB_TOQUE" if a["tipo"] == "TCB_TOQUE" else "TCB_CONFIRMADO"
+        cooldown = COOLDOWN_TCB_TOQUE if a["tipo"] == "TCB_TOQUE" else COOLDOWN_TCB_CONFIRMADO
+
+        if not paso_cooldown(alertas_state, a["symbol"], tipo_cooldown, cooldown):
             continue
         if enviar_alerta_tcb(a, btc):
             enviadas += 1
-            registrar_alerta(alertas_state, a["symbol"], "TCB")
-            print(f"   🚀 TCB: {a_real(a['symbol'])} "
-                  f"(fibo {a['fibo_retroceso']:.1f}% | rebote {a['rebote_pct']:+.1f}% | "
-                  f"vol {a['vol_ratio']:.2f}x)")
+            registrar_alerta(alertas_state, a["symbol"], tipo_cooldown)
+            if a["tipo"] == "TCB_TOQUE":
+                print(f"   🎯 TOQUE 78.6%: {a_real(a['symbol'])} "
+                      f"(fibo {a['fibo_retroceso']:.1f}% | "
+                      f"hace {a['velas_desde_toque']} velas)")
+            else:
+                print(f"   ✅ CONFIRMADO: {a_real(a['symbol'])} "
+                      f"(fibo {a['fibo_retroceso']:.1f}% | "
+                      f"rebote {a['rebote_pct']:+.1f}%)")
 
     # ─── FUERTES ───
     if not bloquear_fuertes:
