@@ -263,28 +263,6 @@ def cumple_calidad(mc, rank):
         return False
     return True
 
-def timing_5m_ok(df, symbol):
-    """
-    Verifica si el precio en 5m está por encima de EMA9 y VWAP.
-    Usa aproximaciones con los datos de 5m del recolector.
-    """
-    g_5m = df[df["symbol"] == symbol].sort_values("timestamp")
-    if len(g_5m) < 50:
-        return False
-    
-    g_5m = g_5m.copy()
-    # EMA9
-    g_5m["ema9"] = g_5m["price"].ewm(span=9, adjust=False).mean()
-    
-    # VWAP (aproximación: precio típico * volumen acumulado)
-    if "volume_24h" not in g_5m.columns:
-        return False
-    g_5m["tipo_precio"] = (g_5m["price"] + g_5m["price"].shift(1)) / 2
-    g_5m["vwap"] = (g_5m["tipo_precio"] * g_5m["volume_24h"]).cumsum() / g_5m["volume_24h"].cumsum()
-    
-    ultimo = g_5m.iloc[-1]
-    # Verificar que el precio esté por encima de ambas
-    return bool(ultimo["price"] > ultimo["ema9"] and ultimo["price"] > ultimo["vwap"])
 
 def hacer_velas_4h(df):
     """Genera velas de 4h para análisis de ACUM."""
@@ -660,11 +638,6 @@ def detectar_arranque(df, symbol):
     if señal is None:
         return None
 
-    # --- FILTRO DE TIMING 5M ---
-    if not timing_5m_ok(df, symbol):
-        return None
-    # ---------------------------
-
     return {
         "tipo": "ARRANQUE",
         "señal": señal,
@@ -745,11 +718,6 @@ def detectar_reentrada_fibo(df, symbol):
     if vol_ratio < REENTRADA_VOL_MIN:
         return None
 
-    # --- NUEVO FILTRO DE TIMING 5M ---
-    if not timing_5m_ok(df, symbol):
-        return None
-    # ---------------------------------
-
     distancia_fibo = abs(pos_actual - FIBO_IDEAL)
 
     return {
@@ -772,6 +740,8 @@ def detectar_reentrada_fibo(df, symbol):
         "market_cap_m": mc / 1e6,
         "ts": ts_max,
     }
+
+
 # ============================================================
 # DETECCIÓN — ACUMULACIÓN (QNT-style)
 # ============================================================
@@ -949,11 +919,6 @@ def detectar_tcb(df, symbol, btc_estado):
 
     p_actual = rec_72.iloc[-1]["price"]
 
-    # --- FILTRO DE TIMING 5M ---
-    if not timing_5m_ok(df, symbol):
-        return None
-    # ---------------------------
-
     return {
         "tipo": "TCB_CONFIRMADO",
         "symbol": symbol,
@@ -971,6 +936,7 @@ def detectar_tcb(df, symbol, btc_estado):
         "market_cap_m": mc / 1e6,
         "ts": ts_max,
     }
+
 
 # ============================================================
 # ENVÍO DE MENSAJES
@@ -1099,8 +1065,6 @@ def enviar_alerta_tcb(a, btc):
     hora_lima = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%H:%M")
     linea_btc, aviso_btc = _contexto_btc(btc)
 
-    # Como ahora el bot detecta el toque exacto y espera el rebote, 
-    # el mensaje sale como "CONFIRMADO" pero con todo el detalle que tenías antes.
     msg = (
         f"✅ TCB CONFIRMADO — {a_real(a['symbol'])}\n"
         f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
@@ -1124,6 +1088,8 @@ def enviar_alerta_tcb(a, btc):
         msg += f"\n{aviso_btc}"
 
     return enviar_telegram(msg)
+
+
 # ============================================================
 # MAIN
 # ============================================================
@@ -1305,78 +1271,6 @@ def main():
 
     # === GUARDAR ESTADO DE ALERTAS ===
     guardar_alertas_state(alertas_state)
-
-    # ═══════════════════════════════════════════════════════════
-    # 🔬 DIAGNÓSTICO DE TIMING (EMA9 / VWAP)
-    # ═══════════════════════════════════════════════════════════
-    print(f"\n🔬 DIAGNÓSTICO DE TIMING 5M (EMA9 / VWAP):")
-    
-    total_en_zona = 0
-    pasan_timing = 0
-    bloqueadas_por_timing = 0
-    detalles_bloqueo = []
-
-    for sym in todas:
-        if sym.upper() in EXCLUIR or sym.upper() == "xk1":
-            continue
-            
-        g = df[df["symbol"] == sym].sort_values("timestamp")
-        if len(g) < 50:
-            continue
-            
-        # Verificar si está en zona Fibo (usando la misma lógica de TCB)
-        ts_max = g["timestamp"].max()
-        corte_72 = ts_max - timedelta(hours=72)
-        rec_72 = g[g["timestamp"] >= corte_72].reset_index(drop=True)
-        if len(rec_72) < 20:
-            continue
-            
-        p_min = rec_72["price"].min()
-        p_max = rec_72["price"].max()
-        if p_min <= 0 or p_max <= p_min:
-            continue
-            
-        rango = p_max - p_min
-        if (rango / p_min) * 100 < 10:  # Rally mínimo 10%
-            continue
-            
-        # Buscar si el precio actual está en zona Fibo (61.8 o 78.6)
-        p_actual = rec_72.iloc[-1]["price"]
-        pos_fibo = ((p_max - p_actual) / rango) * 100
-        
-        en_zona_618 = 58.0 <= pos_fibo <= 65.0
-        en_zona_786 = 74.0 <= pos_fibo <= 82.0
-        
-        if en_zona_618 or en_zona_786:
-            total_en_zona += 1
-            zona = "61.8%" if en_zona_618 else "78.6%"
-            
-            # Verificar si pasa el filtro de timing
-            if timing_5m_ok(df, sym):
-                pasan_timing += 1
-                detalles_bloqueo.append(f"   ✅ {a_real(sym)} en {zona} (PASA)")
-            else:
-                bloqueadas_por_timing += 1
-                detalles_bloqueo.append(f"   ❌ {a_real(sym)} en {zona} (BLOQUEADA por EMA9/VWAP)")
-
-    print(f"   Monedas en zona Fibo (61.8% o 78.6%): {total_en_zona}")
-    print(f"   Pasan filtro EMA9/VWAP: {pasan_timing}")
-    print(f"   Bloqueadas por filtro: {bloqueadas_por_timing}")
-    
-    if detalles_bloqueo:
-        print(f"\n   Detalle:")
-        for d in detalles_bloqueo[:15]:  # Mostrar solo las primeras 15
-            print(d)
-        if len(detalles_bloqueo) > 15:
-            print(f"   ... y {len(detalles_bloqueo) - 15} más.")
-
-    # === RESUMEN ===
-    print(f"\n{'='*70}")
-    print(f"📢 RESUMEN")
-    # ... (el resto del resumen sigue igual) ...
-
-
-  
 
     # === RESUMEN ===
     print(f"\n{'='*70}")
