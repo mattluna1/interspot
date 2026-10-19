@@ -1306,6 +1306,78 @@ def main():
     # === GUARDAR ESTADO DE ALERTAS ===
     guardar_alertas_state(alertas_state)
 
+    # ═══════════════════════════════════════════════════════════
+    # 🔬 DIAGNÓSTICO DE TIMING (EMA9 / VWAP)
+    # ═══════════════════════════════════════════════════════════
+    print(f"\n🔬 DIAGNÓSTICO DE TIMING 5M (EMA9 / VWAP):")
+    
+    total_en_zona = 0
+    pasan_timing = 0
+    bloqueadas_por_timing = 0
+    detalles_bloqueo = []
+
+    for sym in todas:
+        if sym.upper() in EXCLUIR or sym.upper() == "xk1":
+            continue
+            
+        g = df[df["symbol"] == sym].sort_values("timestamp")
+        if len(g) < 50:
+            continue
+            
+        # Verificar si está en zona Fibo (usando la misma lógica de TCB)
+        ts_max = g["timestamp"].max()
+        corte_72 = ts_max - timedelta(hours=72)
+        rec_72 = g[g["timestamp"] >= corte_72].reset_index(drop=True)
+        if len(rec_72) < 20:
+            continue
+            
+        p_min = rec_72["price"].min()
+        p_max = rec_72["price"].max()
+        if p_min <= 0 or p_max <= p_min:
+            continue
+            
+        rango = p_max - p_min
+        if (rango / p_min) * 100 < 10:  # Rally mínimo 10%
+            continue
+            
+        # Buscar si el precio actual está en zona Fibo (61.8 o 78.6)
+        p_actual = rec_72.iloc[-1]["price"]
+        pos_fibo = ((p_max - p_actual) / rango) * 100
+        
+        en_zona_618 = 58.0 <= pos_fibo <= 65.0
+        en_zona_786 = 74.0 <= pos_fibo <= 82.0
+        
+        if en_zona_618 or en_zona_786:
+            total_en_zona += 1
+            zona = "61.8%" if en_zona_618 else "78.6%"
+            
+            # Verificar si pasa el filtro de timing
+            if timing_5m_ok(df, sym):
+                pasan_timing += 1
+                detalles_bloqueo.append(f"   ✅ {a_real(sym)} en {zona} (PASA)")
+            else:
+                bloqueadas_por_timing += 1
+                detalles_bloqueo.append(f"   ❌ {a_real(sym)} en {zona} (BLOQUEADA por EMA9/VWAP)")
+
+    print(f"   Monedas en zona Fibo (61.8% o 78.6%): {total_en_zona}")
+    print(f"   Pasan filtro EMA9/VWAP: {pasan_timing}")
+    print(f"   Bloqueadas por filtro: {bloqueadas_por_timing}")
+    
+    if detalles_bloqueo:
+        print(f"\n   Detalle:")
+        for d in detalles_bloqueo[:15]:  # Mostrar solo las primeras 15
+            print(d)
+        if len(detalles_bloqueo) > 15:
+            print(f"   ... y {len(detalles_bloqueo) - 15} más.")
+
+    # === RESUMEN ===
+    print(f"\n{'='*70}")
+    print(f"📢 RESUMEN")
+    # ... (el resto del resumen sigue igual) ...
+
+
+  
+
     # === RESUMEN ===
     print(f"\n{'='*70}")
     print(f"📢 RESUMEN")
