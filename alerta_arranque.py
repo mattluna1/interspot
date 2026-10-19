@@ -263,6 +263,28 @@ def cumple_calidad(mc, rank):
         return False
     return True
 
+def timing_5m_ok(df, symbol):
+    """
+    Verifica si el precio en 5m está por encima de EMA9 y VWAP.
+    Usa aproximaciones con los datos de 5m del recolector.
+    """
+    g_5m = df[df["symbol"] == symbol].sort_values("timestamp")
+    if len(g_5m) < 50:
+        return False
+    
+    g_5m = g_5m.copy()
+    # EMA9
+    g_5m["ema9"] = g_5m["price"].ewm(span=9, adjust=False).mean()
+    
+    # VWAP (aproximación: precio típico * volumen acumulado)
+    if "volume_24h" not in g_5m.columns:
+        return False
+    g_5m["tipo_precio"] = (g_5m["price"] + g_5m["price"].shift(1)) / 2
+    g_5m["vwap"] = (g_5m["tipo_precio"] * g_5m["volume_24h"]).cumsum() / g_5m["volume_24h"].cumsum()
+    
+    ultimo = g_5m.iloc[-1]
+    # Verificar que el precio esté por encima de ambas
+    return bool(ultimo["price"] > ultimo["ema9"] and ultimo["price"] > ultimo["vwap"])
 
 def hacer_velas_4h(df):
     """Genera velas de 4h para análisis de ACUM."""
@@ -638,6 +660,11 @@ def detectar_arranque(df, symbol):
     if señal is None:
         return None
 
+    # --- FILTRO DE TIMING 5M ---
+    if not timing_5m_ok(df, symbol):
+        return None
+    # ---------------------------
+
     return {
         "tipo": "ARRANQUE",
         "señal": señal,
@@ -718,6 +745,11 @@ def detectar_reentrada_fibo(df, symbol):
     if vol_ratio < REENTRADA_VOL_MIN:
         return None
 
+    # --- NUEVO FILTRO DE TIMING 5M ---
+    if not timing_5m_ok(df, symbol):
+        return None
+    # ---------------------------------
+
     distancia_fibo = abs(pos_actual - FIBO_IDEAL)
 
     return {
@@ -740,8 +772,6 @@ def detectar_reentrada_fibo(df, symbol):
         "market_cap_m": mc / 1e6,
         "ts": ts_max,
     }
-
-
 # ============================================================
 # DETECCIÓN — ACUMULACIÓN (QNT-style)
 # ============================================================
@@ -919,6 +949,11 @@ def detectar_tcb(df, symbol, btc_estado):
 
     p_actual = rec_72.iloc[-1]["price"]
 
+    # --- FILTRO DE TIMING 5M ---
+    if not timing_5m_ok(df, symbol):
+        return None
+    # ---------------------------
+
     return {
         "tipo": "TCB_CONFIRMADO",
         "symbol": symbol,
@@ -936,8 +971,6 @@ def detectar_tcb(df, symbol, btc_estado):
         "market_cap_m": mc / 1e6,
         "ts": ts_max,
     }
-    return None
-
 
 # ============================================================
 # ENVÍO DE MENSAJES
