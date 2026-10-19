@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALERTA V5 — SUELO + ARRANQUE + REENTRADA + ACUMULACIÓN + TCB (2 etapas) + BTC 6 ESTADOS
+ALERTA V6 — SUELO + ARRANQUE + REENTRADA + ACUMULACIÓN + TCB (USA/Asia) + BTC 6 ESTADOS
 
 Señales:
   1. 🎯 SUELO         → caída fuerte + frenado + volumen decreciente
@@ -9,13 +9,12 @@ Señales:
   3. 🚨 FUERTE        → arranque confirmado (3.0% / 1.3x+)
   4. 📐 REENTRADA     → rebote en Fibo 38-70%
   5. 🚀 ACUMULACIÓN   → QNT-style (rango comprimido + ruptura)
-  6. 🚀 TCB           → dos etapas:
-       - TCB_TOQUE: toque al 78.6% (alerta inmediata)
-       - TCB_CONFIRMADO: 2 velas después, si hay rebote ≥2%
+  6. 🚀 TCB           → Fibo exacto en 4h + filtro de horario:
+       - USA Apertura (13-15 UTC): alerta + filtro 5m (EMA9+VWAP)
+       - Asia Apertura (00-01 UTC): alerta sin filtro
+       - Europa (07-09 UTC): solo registro (sin alerta)
 
 BTC análisis (6 estados): UP / FLAT / DOWN_SOFT / DOWN / BOTTOM / RECOVERY
-
-Sistema de alias: lee secretos.json o SECRETOS_JSON (GitHub Secrets)
 """
 
 import json
@@ -150,16 +149,16 @@ ACUM_RUPTURA_MIN    = 4.0
 
 
 # ============================================================
-# UMBRALES — TCB (retroceso Fibo con confirmación en 2 etapas)
+# UMBRALES — TCB (retroceso Fibo con filtro de horario)
 # ============================================================
 
 TCB_FIBO_MIN            = 58.0
 TCB_FIBO_MAX            = 82.0
 TCB_RALLY_MIN_PCT       = 10.0
 TCB_VENTANA_H           = 72
-TCB_REBOTE_MIN_PCT      = 2.0      # rebote mínimo para confirmar
+TCB_REBOTE_MIN_PCT      = 2.0
 TCB_VOL_MIN             = 1.0
-TCB_CONFIRMACION_VELAS  = 2        # 2 velas (~10 min) para confirmar rebote
+TCB_CONFIRMACION_VELAS  = 6   # 6 velas de 5m (30 min) para USA
 
 
 # ============================================================
@@ -181,6 +180,20 @@ COOLDOWN_REENTRADA      = 8
 COOLDOWN_ACUM           = 12
 COOLDOWN_TCB_TOQUE      = 4
 COOLDOWN_TCB_CONFIRMADO = 12
+
+
+# ============================================================
+# HORARIOS DE VENTANAS
+# ============================================================
+
+# Ventanas con alerta
+VENTANAS_ALERTA = {
+    "USA": (13, 15),    # 13:00 - 15:00 UTC
+    "ASIA": (0, 1),     # 00:00 - 01:00 UTC
+}
+
+# Ventana solo registro
+VENTANA_REGISTRO = (7, 9)  # 07:00 - 09:00 UTC (Europa)
 
 
 # ============================================================
@@ -277,6 +290,30 @@ def hacer_velas_4h(df):
         rank=("cmc_rank", "last"),
         mc=("market_cap", "last"),
     ).reset_index().sort_values(["symbol", "vela"]).reset_index(drop=True)
+
+
+def timing_5m_ok(df, symbol, ventana=6):
+    """
+    Verifica si en las 'ventana' velas de 5m después del toque,
+    el precio cruzó EMA9 y VWAP.
+    """
+    g_5m = df[df["symbol"] == symbol].sort_values("timestamp")
+    if len(g_5m) < 50:
+        return False
+    
+    g_5m = g_5m.copy()
+    g_5m["ema9"] = g_5m["price"].ewm(span=9, adjust=False).mean()
+    
+    if "volume_24h" not in g_5m.columns:
+        return False
+    g_5m["tipo_precio"] = (g_5m["price"] + g_5m["price"].shift(1)) / 2
+    g_5m["vwap"] = (g_5m["tipo_precio"] * g_5m["volume_24h"]).cumsum() / g_5m["volume_24h"].cumsum()
+    
+    ultimas = g_5m.tail(ventana)
+    for _, vela in ultimas.iterrows():
+        if vela["price"] > vela["ema9"] and vela["price"] > vela["vwap"]:
+            return True
+    return False
 
 
 # ============================================================
@@ -822,13 +859,15 @@ def detectar_acumulacion(velas_4h, btc_estado):
 
 
 # ============================================================
-# DETECCIÓN — TCB (retroceso Fibo con confirmación en 2 etapas)
+# DETECCIÓN — TCB (Fibo en 4h + filtro de horario)
 # ============================================================
 
 def detectar_tcb(df, symbol, btc_estado):
     """
-    Detecta TCB con Fibo exacto (61.8%, 78.6%, 100%).
-    Usa una tolerancia del 1.5% por si la vela sobrepasa el nivel.
+    Detecta TCB con Fibo exacto en 4h y filtro de horario.
+    - USA Apertura (13-15 UTC): alerta + filtro 5m (EMA9+VWAP, 6 velas)
+    - Asia Apertura (00-01 UTC): alerta sin filtro
+    - Europa (07-09 UTC): solo registro (no alerta)
     """
     if btc_estado not in ("FLAT", "DOWN_SOFT", "RECOVERY"):
         return None
@@ -846,13 +885,24 @@ def detectar_tcb(df, symbol, btc_estado):
     if not cumple_calidad(mc, rank):
         return None
 
-    # Ventana: últimas 72h
-    corte_72 = ts_max - timedelta(hours=TCB_VENTANA_H)
-    rec_72 = g[g["timestamp"] >= corte_72].reset_index(drop=True)
-    if len(rec_72) < 20:
+    # Agrupar en 4h para el Fibo
+    g_4h = g.copy()
+    g_4h["vela_4h"] = g_4h["timestamp"].dt.floor("4h")
+    velas_4h = g_4h.groupby("vela_4h").agg(
+        price=("price", "last"),
+        timestamp=("vela_4h", "last")
+    ).reset_index()
+
+    if len(velas_4h) < 20:
         return None
 
-    # Rally previo (mín → máx)
+    ts_max_4h = velas_4h["timestamp"].max()
+    corte_72 = ts_max_4h - timedelta(hours=72)
+    rec_72 = velas_4h[velas_4h["timestamp"] >= corte_72].reset_index(drop=True)
+    if len(rec_72) < 10:
+        return None
+
+    # Rally previo (mín → máx) en 4h
     p_min = rec_72["price"].min()
     idx_min = rec_72["price"].idxmin()
     p_max = rec_72.loc[idx_min:]["price"].max()
@@ -867,21 +917,19 @@ def detectar_tcb(df, symbol, btc_estado):
     if rango_pct < TCB_RALLY_MIN_PCT:
         return None
 
-    # Fibos Exactos
     fibo_618 = p_max - rango * 0.618
     fibo_786 = p_max - rango * 0.786
     fibo_100 = p_min
 
     post_rally = rec_72.loc[idx_max:].copy()
-    if len(post_rally) < 3:
+    if len(post_rally) < 2:
         return None
 
     idx_toque = None
     fibo_tocado = None
-    TOLERANCIA = 1.5  # Margen para capturar el toque exacto
+    TOLERANCIA = 1.5
 
-    # Buscar en las últimas 3 velas si tocó el Fibo
-    for i in range(len(post_rally) - 1, max(-1, len(post_rally) - 4), -1):
+    for i in range(len(post_rally) - 1, max(-1, len(post_rally) - 3), -1):
         precio_vela = post_rally.iloc[i]["price"]
         idx_global = idx_max + i
         
@@ -899,25 +947,52 @@ def detectar_tcb(df, symbol, btc_estado):
         return None
 
     p_toque = rec_72.iloc[idx_toque]["price"]
+    ts_toque = rec_72.iloc[idx_toque]["timestamp"]
+
     post_toque = rec_72.iloc[idx_toque:]["price"]
     if len(post_toque) < 2:
         return None
     
-    # Verificar rebote
     p_rebote = post_toque.max()
     rebote_pct = ((p_rebote - p_toque) / p_toque) * 100
 
     if rebote_pct < TCB_REBOTE_MIN_PCT:
         return None
 
-    # Verificar volumen
     v_base = g["volume_24h"].tail(20).mean()
     v_ult = g["volume_24h"].iloc[-1]
     vol_ratio = v_ult / v_base if v_base > 0 else 0
     if vol_ratio < TCB_VOL_MIN:
         return None
 
-    p_actual = rec_72.iloc[-1]["price"]
+    # === FILTRO DE HORARIO ===
+    hora_utc = ts_toque.hour
+    
+    # Europa (07-09 UTC): solo registro, no alerta
+    if 7 <= hora_utc < 9:
+        tipo_ventana = "REGISTRO_EUROPA"
+        aplicar_filtro_5m = False
+    # USA Apertura (13-15 UTC): alerta + filtro 5m
+    elif 13 <= hora_utc < 15:
+        tipo_ventana = "USA"
+        aplicar_filtro_5m = True
+    # Asia Apertura (00-01 UTC): alerta sin filtro
+    elif 0 <= hora_utc < 1:
+        tipo_ventana = "ASIA"
+        aplicar_filtro_5m = False
+    # 15:00 Lima (20-21 UTC): alerta + filtro 5m
+    elif 20 <= hora_utc < 21:
+        tipo_ventana = "LIMA_15"
+        aplicar_filtro_5m = True
+    else:
+        return None  # Fuera de ventanas válidas
+
+    # Aplicar filtro de 5m si corresponde (USA)
+    if aplicar_filtro_5m:
+        if not timing_5m_ok(df, symbol, ventana=TCB_CONFIRMACION_VELAS):
+            return None
+
+    p_actual = g.iloc[-1]["price"]
 
     return {
         "tipo": "TCB_CONFIRMADO",
@@ -935,6 +1010,8 @@ def detectar_tcb(df, symbol, btc_estado):
         "cmc_rank": int(rank),
         "market_cap_m": mc / 1e6,
         "ts": ts_max,
+        "hora_utc": hora_utc,
+        "ventana": tipo_ventana,
     }
 
 
@@ -1065,9 +1142,20 @@ def enviar_alerta_tcb(a, btc):
     hora_lima = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%H:%M")
     linea_btc, aviso_btc = _contexto_btc(btc)
 
+    ventana = a.get("ventana", "")
+    if ventana == "USA":
+        emoji_ventana = "🔥 APERTURA USA"
+    elif ventana == "ASIA":
+        emoji_ventana = "✅ ASIA"
+    elif ventana == "LIMA_15":
+        emoji_ventana = "🔥🇵🇪 15:00 LIMA ⭐"
+    else:
+        emoji_ventana = ""
+
     msg = (
         f"✅ TCB CONFIRMADO — {a_real(a['symbol'])}\n"
         f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
+        f"📅 {emoji_ventana} ({a['hora_utc']:02d}:00 UTC)\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"📊 Rally previo: +{a['rango_pct']:.1f}%\n"
         f"   Máx: ${a['p_max']:.6f}\n"
@@ -1099,7 +1187,7 @@ def main():
     ahora_lima = ahora - timedelta(hours=5)
 
     print(f"\n{'='*70}")
-    print(f"🎯 SUELO + ⚡ ARRANQUE + 📐 REENTRADA + 🚀 ACUM + 🚀 TCB — xk1 6 ESTADOS")
+    print(f"🎯 SUELO + ⚡ ARRANQUE + 📐 REENTRADA + 🚀 ACUM + 🚀 TCB (USA/Asia) — xk1 6 ESTADOS")
     print(f"   UTC:  {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"   Lima: {ahora_lima.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*70}")
@@ -1216,16 +1304,33 @@ def main():
                   f"(rango {a['rango_pct']:.1f}% | pos {a['pos_rango']:.0f}% | "
                   f"vol cv {a['vol_cv']:.2f})")
 
-    # ─── TCB ───
+    # ─── TCB (USA + ASIA con alerta, EUROPA solo registro) ───
+    registro_europa = []
     for a in tcb_detectados[:MAX_POR_TIPO]:
+        ventana = a.get("ventana", "")
+        
+        # Europa: solo registro, no alerta
+        if ventana == "REGISTRO_EUROPA":
+            registro_europa.append(a)
+            print(f"   📝 REGISTRO EUROPA: {a_real(a['symbol'])} (hora {a['hora_utc']:02d}:00 UTC)")
+            continue
+        
+        # USA / Asia: alerta
         if not paso_cooldown(alertas_state, a["symbol"], "TCB", COOLDOWN_TCB_CONFIRMADO):
             continue
         if enviar_alerta_tcb(a, btc):
             enviadas += 1
             registrar_alerta(alertas_state, a["symbol"], "TCB")
             print(f"   ✅ TCB: {a_real(a['symbol'])} "
-                  f"(Tocó {a['fibo_tocado']} | "
+                  f"(Tocó {a['fibo_tocado']} | {ventana} | "
                   f"rebote {a['rebote_pct']:+.1f}%)")
+
+    # Guardar registro de Europa
+    if registro_europa:
+        df_europa = pd.DataFrame(registro_europa)
+        archivo_europa = "registro_europa.csv"
+        df_europa.to_csv(archivo_europa, mode="a", header=not os.path.exists(archivo_europa), index=False)
+        print(f"   📝 {len(registro_europa)} toques de Europa registrados en {archivo_europa}")
 
     # ─── FUERTES ───
     if not bloquear_fuertes:
