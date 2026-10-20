@@ -1089,8 +1089,6 @@ def enviar_alerta_tcb(a, btc):
     linea_timing = ""
 
     msg = (
-        ...
-    )
         f"✅ TCB CONFIRMADO — {a_real(a['symbol'])}\n"
         f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
         f"📅 {emoji_ventana} ({a['hora_utc']:02d}:00 UTC)\n"
