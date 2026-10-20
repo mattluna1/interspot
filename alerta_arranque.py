@@ -71,6 +71,10 @@ CSV_URLS = {
         "https://raw.githubusercontent.com/mattluna3/inspector/"
         "refs/heads/main/data/cmc/market_history_emerging.csv"
     ),
+    "201_300": (
+        "https://raw.githubusercontent.com/emerging2/inspector2/"
+        "refs/heads/main/data/cmc/market_history_201_300.csv"
+    ),
 }
 
 # [P3.4] stables y wrapped, incluyendo USDGO y USDf
@@ -172,7 +176,7 @@ VENTANAS_TOQUE = {
 
 MC_MIN              = 50_000_000
 MC_MAX              = 5_000_000_000
-RANK_MAX            = 200
+RANK_MAX            = 300
 
 MAX_POR_TIPO        = 10
 
