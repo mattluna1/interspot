@@ -154,11 +154,14 @@ TCB_RALLY_MIN_PCT       = 10.0
 TCB_VENTANA_H           = 72
 TCB_VOL_MIN             = 1.0
 
-TCB_CONFIRMACION_VELAS = 6      # velas por bloque
-TCB_MAX_BLOQUES        = 4      # 4 bloques × 6 velas = 24 velas = 2h
-TCB_MOV_MIN_PCT        = 0.5
-TCB_MOV_MAX_PCT        = 3.0
-TCB_SUBIDAS_MIN        = 4
+TCB_CONFIRMACION_VELAS    = 6      # velas por bloque
+TCB_MAX_BLOQUES           = 4      # 4 bloques × 6 velas = 24 velas = 2h
+TCB_MOV_MIN_PCT           = 0.5
+TCB_MOV_MAX_PCT           = 3.0
+TCB_SUBIDAS_MIN           = 4
+TCB_SEGUIMIENTO_MIN_ANTES = 15     # NUEVO: 15 min antes del cierre
+TCB_SEGUIMIENTO_H_DESPUES = 2      # NUEVO: 2h después del cierre
+TCB_REBOTE_MIN_PCT        = 2.0    # NUEVO: rebote mínimo post-cierre
 
 VENTANAS_TOQUE = {
     0:  ("ASIA", True),
@@ -292,32 +295,35 @@ def hacer_velas_4h(df):
 
 
 # [P1] Ventana deslizante hasta TCB_MAX_BLOQUES bloques de 6 velas (2h)
-def inicio_movimiento_5m(df, symbol, ts_desde,
+def inicio_movimiento_5m(df, symbol, ts_cierre_vela,
+                         minutos_antes=TCB_SEGUIMIENTO_MIN_ANTES,
+                         horas_despues=TCB_SEGUIMIENTO_H_DESPUES,
                          n_velas=TCB_CONFIRMACION_VELAS,
-                         max_bloques=TCB_MAX_BLOQUES,
                          min_mov_pct=TCB_MOV_MIN_PCT,
                          max_mov_pct=TCB_MOV_MAX_PCT,
                          min_subidas=TCB_SUBIDAS_MIN):
     """
-    Prueba bloques deslizantes de n_velas de 5m POSTERIORES a ts_desde.
-    Si algún bloque confirma el rebote, devuelve info con bloque y minutos.
+    Vigila velas de 5m en el rango:
+      - minutos_antes antes del cierre de la vela 4h
+      - horas_despues horas después del cierre de la vela 4h
+    Busca confirmación de rebote en ese rango con ventana deslizante.
     """
+    ts_inicio = ts_cierre_vela - timedelta(minutes=minutos_antes)
+    ts_fin = ts_cierre_vela + timedelta(hours=horas_despues)
+
     s = (df[df["symbol"] == symbol]
          .set_index("timestamp")["price"].sort_index())
     p5 = s.resample("5min").last().dropna()
-    p5 = p5[p5.index >= ts_desde]
+    p5 = p5[(p5.index >= ts_inicio) & (p5.index <= ts_fin)]
 
     if len(p5) < n_velas + 1:
         return None
 
-    p5 = p5.iloc[:n_velas * max_bloques + 1]
-    p_min_global = float(p5.min())
+    p_min_rango = float(p5.min())
 
-    for bloque_idx in range(max_bloques):
-        inicio = bloque_idx * n_velas
-        fin = inicio + n_velas + 1
-        bloque = p5.iloc[inicio:fin]
-
+    # Ventana deslizante de n_velas
+    for i in range(len(p5) - n_velas):
+        bloque = p5.iloc[i:i + n_velas + 1]
         if len(bloque) < n_velas + 1:
             break
 
@@ -335,20 +341,16 @@ def inicio_movimiento_5m(df, symbol, ts_desde,
         if mov_ventana < min_mov_pct:
             continue
 
-        mov_desde_min = (p_ult / p_min_global - 1) * 100 if p_min_global > 0 else 0
+        mov_desde_min = (p_ult / p_min_rango - 1) * 100 if p_min_rango > 0 else 0
         if mov_desde_min > max_mov_pct:
             continue
 
-        n_velas_totales = inicio + n_velas
         return {
             "p_ult": p_ult,
             "subidas": subidas,
             "mov_ventana": mov_ventana,
             "mov_desde_min": mov_desde_min,
             "ts_ult": bloque.index[-1],
-            "bloque": bloque_idx + 1,
-            "n_velas": n_velas_totales,
-            "minutos": n_velas_totales * 5,
         }
 
     return None
@@ -906,6 +908,24 @@ def detectar_tcb(df, symbol, btc_estado):
 
     ts_cierre_toque = ts_toque + timedelta(hours=4)
 
+    # === NUEVO: Filtro de rebote post-cierre ===
+    precios_post = g[
+        (g["timestamp"] > ts_cierre_toque) &
+        (g["timestamp"] <= ts_cierre_toque + timedelta(minutes=30))
+    ]
+
+    if len(precios_post) > 0:
+        p_max_post = float(precios_post["price"].max())
+        p_min_post = float(precios_post["price"].min())
+        mov_arriba = (p_max_post - p_toque) / p_toque * 100 if p_toque > 0 else 0
+        mov_abajo = (p_toque - p_min_post) / p_toque * 100 if p_toque > 0 else 0
+
+        if max(mov_arriba, mov_abajo) < TCB_REBOTE_MIN_PCT:
+            return None
+    else:
+        return None
+    # === FIN filtro de rebote ===
+
     v_base = g["volume_24h"].tail(20).mean()
     v_ult = g["volume_24h"].iloc[-1]
     vol_ratio = v_ult / v_base if v_base > 0 else 0
@@ -924,7 +944,6 @@ def detectar_tcb(df, symbol, btc_estado):
             return None
         rebote_pct = mov["mov_desde_min"]
         p_rebote = mov["p_ult"]
-        bloque = mov["bloque"]
         minutos_confirm = mov["minutos"]
 
     return {
@@ -937,7 +956,6 @@ def detectar_tcb(df, symbol, btc_estado):
         "cmc_rank": int(rank), "market_cap_m": mc / 1e6,
         "ts": ts_max, "ts_toque": ts_toque,
         "hora_utc": hora_utc, "ventana": ventana,
-        "bloque": bloque, "minutos_confirm": minutos_confirm,
     }
 
 
@@ -1068,14 +1086,11 @@ def enviar_alerta_tcb(a, btc):
     else:
         emoji_ventana = ""
 
-    bloque = a.get("bloque")
-    minutos_confirm = a.get("minutos_confirm")
-    if bloque is not None and minutos_confirm is not None:
-        linea_timing = f"⏱️ Confirmado en bloque {bloque} ({minutos_confirm} min post-toque)\n"
-    else:
-        linea_timing = ""
+    linea_timing = ""
 
     msg = (
+        ...
+    )
         f"✅ TCB CONFIRMADO — {a_real(a['symbol'])}\n"
         f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
         f"📅 {emoji_ventana} ({a['hora_utc']:02d}:00 UTC)\n"
