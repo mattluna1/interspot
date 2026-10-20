@@ -935,8 +935,6 @@ def detectar_tcb(df, symbol, btc_estado):
     p_actual = float(g.iloc[-1]["price"])
     rebote_pct = 0.0
     p_rebote = p_actual
-    bloque = None
-    minutos_confirm = None
 
     if con_alerta:
         mov = inicio_movimiento_5m(df, symbol, ts_cierre_toque)
@@ -944,7 +942,6 @@ def detectar_tcb(df, symbol, btc_estado):
             return None
         rebote_pct = mov["mov_desde_min"]
         p_rebote = mov["p_ult"]
-        minutos_confirm = mov["minutos"]
 
     return {
         "tipo": "TCB_CONFIRMADO", "symbol": symbol,
