@@ -1165,6 +1165,14 @@ def main():
     velas_4h = hacer_velas_4h(df)
     acumulaciones = detectar_acumulacion(velas_4h, btc["estado"], ahora)
 
+    # === DEBUG TEMPORAL ===
+    print(f"\n🔍 DEBUG ACUM ({len(acumulaciones)} detectadas):")
+    for a in acumulaciones[:MAX_POR_TIPO]:
+        cd = not paso_cooldown(alertas_state, a["symbol"], "ACUM", COOLDOWN_ACUM)
+        print(f"   {a_real(a['symbol'])} ({a['fase']}) - cooldown: {'SÍ' if cd else 'NO'}")
+    # === FIN DEBUG ===
+
+
     print(f"\n   🎯 SUELOS:        {len(suelos)}")
     print(f"   🚨 FUERTES:       {len(fuertes)}")
     print(f"   🟡 TEMPRANAS:     {len(tempranas)}")
