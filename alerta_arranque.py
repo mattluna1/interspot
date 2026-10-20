@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALERTA V6 — SUELO + ARRANQUE + REENTRADA + ACUMULACIÓN + TCB (USA/Asia) + BTC 6 ESTADOS
+ALERTA V6 FINAL — SUELO + ARRANQUE + REENTRADA + ACUMULACIÓN + TCB + BTC 6 ESTADOS
 
-Señales:
-  1. 🎯 SUELO         → caída fuerte + frenado + volumen decreciente
-  2. 🟡 TEMPRANA      → arranque con volumen empezando (2.0% / 1.2-1.3x)
-  3. 🚨 FUERTE        → arranque confirmado (3.0% / 1.3x+)
-  4. 📐 REENTRADA     → rebote en Fibo 38-70%
-  5. 🚀 ACUMULACIÓN   → QNT-style (rango comprimido + ruptura)
-  6. 🚀 TCB           → Fibo exacto en 4h + filtro de horario:
-       - USA Apertura (13-15 UTC): alerta + filtro 5m (EMA9+VWAP)
-       - Asia Apertura (00-01 UTC): alerta sin filtro
-       - Europa (07-09 UTC): solo registro (sin alerta)
-
-BTC análisis (6 estados): UP / FLAT / DOWN_SOFT / DOWN / BOTTOM / RECOVERY
+Parches aplicados:
+  - P1 TCB: 6 velas 5m por bloque, ventana deslizante hasta 4 bloques (2h)
+  - P2 ACUM: pre-ruptura / ruptura inicial (dispara antes)
+  - P3 bugs: format="mixed", refs/heads/main/, sin 201_300, EXCLUIR lower, USDGO/USDf
 """
 
 import json
@@ -67,30 +59,28 @@ def a_real(alias):
 
 
 # ============================================================
-# URLs
+# URLs  [P3.2] refs/heads/main/ | [P3.3] sin 201_300
 # ============================================================
 
 CSV_URLS = {
     "top100": (
         "https://raw.githubusercontent.com/mattluna3/inspector/"
-        "main/data/cmc/market_history_top100.csv"
+        "refs/heads/main/data/cmc/market_history_top100.csv"
     ),
     "emerging": (
         "https://raw.githubusercontent.com/mattluna3/inspector/"
-        "main/data/cmc/market_history_emerging.csv"
-    ),
-    "201_300": (
-        "https://raw.githubusercontent.com/emerging2/inspector2/"
-        "main/data/cmc/market_history_201_300.csv"
+        "refs/heads/main/data/cmc/market_history_emerging.csv"
     ),
 }
 
+# [P3.4] stables y wrapped, incluyendo USDGO y USDf
 EXCLUIR = {
     "xkqy1", "xkqy2", "xkqy3", "xkqy4", "xkqy5", "xkqy6", "xkqy7", "xkqy8",
     "xkqy9", "xkqya", "xkqyb", "xkqyc", "xkqyd", "xkqye", "xkqyf",
     "xkqyg", "xkqyh", "xkqyi", "xkqyj", "xkqyk", "xkqyl", "xkqym", "xkqyn",
     "xkqyo", "xkqyp", "xkqyq", "xkqyr", "xkqys", "xkqyt", "xkqyu", "xkqyv",
     "xkqyw", "xkqyx", "xkqyy", "xkqyz", "xkqy0", "xkqz1", "xkqz2",
+    "usdgo", "usdf",
 }
 
 
@@ -137,28 +127,43 @@ SUELO_RANGO_COMPRESION  = 0.60
 
 
 # ============================================================
-# UMBRALES — ACUMULACIÓN (QNT-style)
+# UMBRALES — ACUMULACIÓN  [P2]
 # ============================================================
 
-ACUM_RANGO_MIN      = 8.0
-ACUM_RANGO_MAX      = 15.0
-ACUM_POS_RANGO_MIN  = 85.0
-ACUM_VOL_CV_MAX     = 0.35
-ACUM_DUR_MIN        = 20
-ACUM_RUPTURA_MIN    = 4.0
+ACUM_RANGO_MIN       = 8.0
+ACUM_RANGO_MAX       = 15.0
+ACUM_VOL_CV_MAX      = 0.35
+ACUM_DUR_MIN         = 20
+ACUM_DIST_RESIST_MAX = 1.5
+ACUM_RUPTURA_MAX     = 2.0
+ACUM_CAMBIO_MAX      = 4.0
+ACUM_SQUEEZE_MAX     = 0.60
 
 
 # ============================================================
-# UMBRALES — TCB (retroceso Fibo con filtro de horario)
+# UMBRALES — TCB  [P1]
 # ============================================================
 
 TCB_FIBO_MIN            = 58.0
 TCB_FIBO_MAX            = 82.0
 TCB_RALLY_MIN_PCT       = 10.0
 TCB_VENTANA_H           = 72
-TCB_REBOTE_MIN_PCT      = 2.0
 TCB_VOL_MIN             = 1.0
-TCB_CONFIRMACION_VELAS  = 6   # 6 velas de 5m (30 min) para USA
+
+TCB_CONFIRMACION_VELAS = 6      # velas por bloque
+TCB_MAX_BLOQUES        = 4      # 4 bloques × 6 velas = 24 velas = 2h
+TCB_MOV_MIN_PCT        = 0.5
+TCB_MOV_MAX_PCT        = 3.0
+TCB_SUBIDAS_MIN        = 4
+
+VENTANAS_TOQUE = {
+    0:  ("ASIA", True),
+    4:  ("LIMA_03", True),
+    8:  ("REGISTRO_EUROPA", False),
+    12: ("USA", True),
+    16: ("USA_CIERRE", True),
+    20: ("LIMA_15", True),
+}
 
 
 # ============================================================
@@ -167,7 +172,7 @@ TCB_CONFIRMACION_VELAS  = 6   # 6 velas de 5m (30 min) para USA
 
 MC_MIN              = 50_000_000
 MC_MAX              = 5_000_000_000
-RANK_MAX            = 280
+RANK_MAX            = 200
 
 MAX_POR_TIPO        = 10
 
@@ -180,20 +185,7 @@ COOLDOWN_REENTRADA      = 8
 COOLDOWN_ACUM           = 12
 COOLDOWN_TCB_TOQUE      = 4
 COOLDOWN_TCB_CONFIRMADO = 12
-
-
-# ============================================================
-# HORARIOS DE VENTANAS
-# ============================================================
-
-# Ventanas con alerta
-VENTANAS_ALERTA = {
-    "USA": (13, 15),    # 13:00 - 15:00 UTC
-    "ASIA": (0, 1),     # 00:00 - 01:00 UTC
-}
-
-# Ventana solo registro
-VENTANA_REGISTRO = (7, 9)  # 07:00 - 09:00 UTC (Europa)
+COOLDOWN_EUROPA         = 4
 
 
 # ============================================================
@@ -218,16 +210,19 @@ def enviar_telegram(msg):
 
 
 # ============================================================
-# CARGA
+# CARGA  [P3.1] format="mixed" + headers anti-caché
 # ============================================================
 
 def cargar_datos():
     dfs = []
     for nombre, url in CSV_URLS.items():
         try:
-            r = requests.get(url, timeout=30)
+            r = requests.get(url, timeout=30, headers={
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+            })
             r.raise_for_status()
-            df = pd.read_csv(StringIO(r.text))
+            df = pd.read_csv(StringIO(r.text), low_memory=False)
             df["_fuente"] = nombre
             if REAL_A_ALIAS and "symbol" in df.columns:
                 df["symbol"] = (
@@ -243,8 +238,9 @@ def cargar_datos():
         sys.exit("❌ No se pudo cargar ningún CSV")
 
     df = pd.concat(dfs, ignore_index=True)
+    # [P3.1] format="mixed" — CRÍTICO
     df["timestamp"] = pd.to_datetime(
-        df["timestamp"], utc=True, errors="coerce", format="ISO8601"
+        df["timestamp"], utc=True, errors="coerce", format="mixed"
     )
 
     for c in ["price", "volume_24h", "percent_change_24h", "cmc_rank", "market_cap"]:
@@ -278,7 +274,6 @@ def cumple_calidad(mc, rank):
 
 
 def hacer_velas_4h(df):
-    """Genera velas de 4h para análisis de ACUM."""
     df = df.copy()
     df["vela"] = df["timestamp"].dt.floor("240min")
     return df.groupby(["symbol", "vela"]).agg(
@@ -292,32 +287,71 @@ def hacer_velas_4h(df):
     ).reset_index().sort_values(["symbol", "vela"]).reset_index(drop=True)
 
 
-def timing_5m_ok(df, symbol, ventana=6):
+# [P1] Ventana deslizante hasta TCB_MAX_BLOQUES bloques de 6 velas (2h)
+def inicio_movimiento_5m(df, symbol, ts_desde,
+                         n_velas=TCB_CONFIRMACION_VELAS,
+                         max_bloques=TCB_MAX_BLOQUES,
+                         min_mov_pct=TCB_MOV_MIN_PCT,
+                         max_mov_pct=TCB_MOV_MAX_PCT,
+                         min_subidas=TCB_SUBIDAS_MIN):
     """
-    Verifica si en las 'ventana' velas de 5m después del toque,
-    el precio cruzó EMA9 y VWAP.
+    Prueba bloques deslizantes de n_velas de 5m POSTERIORES a ts_desde.
+    Si algún bloque confirma el rebote, devuelve info con bloque y minutos.
     """
-    g_5m = df[df["symbol"] == symbol].sort_values("timestamp")
-    if len(g_5m) < 50:
-        return False
-    
-    g_5m = g_5m.copy()
-    g_5m["ema9"] = g_5m["price"].ewm(span=9, adjust=False).mean()
-    
-    if "volume_24h" not in g_5m.columns:
-        return False
-    g_5m["tipo_precio"] = (g_5m["price"] + g_5m["price"].shift(1)) / 2
-    g_5m["vwap"] = (g_5m["tipo_precio"] * g_5m["volume_24h"]).cumsum() / g_5m["volume_24h"].cumsum()
-    
-    ultimas = g_5m.tail(ventana)
-    for _, vela in ultimas.iterrows():
-        if vela["price"] > vela["ema9"] and vela["price"] > vela["vwap"]:
-            return True
-    return False
+    s = (df[df["symbol"] == symbol]
+         .set_index("timestamp")["price"].sort_index())
+    p5 = s.resample("5min").last().dropna()
+    p5 = p5[p5.index >= ts_desde]
+
+    if len(p5) < n_velas + 1:
+        return None
+
+    p5 = p5.iloc[:n_velas * max_bloques + 1]
+    p_min_global = float(p5.min())
+
+    for bloque_idx in range(max_bloques):
+        inicio = bloque_idx * n_velas
+        fin = inicio + n_velas + 1
+        bloque = p5.iloc[inicio:fin]
+
+        if len(bloque) < n_velas + 1:
+            break
+
+        ema9 = bloque.ewm(span=9, adjust=False).mean()
+        p_ult = float(bloque.iloc[-1])
+
+        if p_ult <= float(ema9.iloc[-1]):
+            continue
+
+        subidas = int((bloque.diff().dropna() > 0).sum())
+        if subidas < min_subidas:
+            continue
+
+        mov_ventana = (p_ult / float(bloque.iloc[0]) - 1) * 100
+        if mov_ventana < min_mov_pct:
+            continue
+
+        mov_desde_min = (p_ult / p_min_global - 1) * 100 if p_min_global > 0 else 0
+        if mov_desde_min > max_mov_pct:
+            continue
+
+        n_velas_totales = inicio + n_velas
+        return {
+            "p_ult": p_ult,
+            "subidas": subidas,
+            "mov_ventana": mov_ventana,
+            "mov_desde_min": mov_desde_min,
+            "ts_ult": bloque.index[-1],
+            "bloque": bloque_idx + 1,
+            "n_velas": n_velas_totales,
+            "minutos": n_velas_totales * 5,
+        }
+
+    return None
 
 
 # ============================================================
-# ANÁLISIS BTC — 6 ESTADOS
+# ANÁLISIS BTC — 6 ESTADOS (sin cambios)
 # ============================================================
 
 def analizar_btc(df):
@@ -327,7 +361,6 @@ def analizar_btc(df):
                 "cambio_24h": 0, "vol_ratio": 0, "precio": 0}
 
     ts_max = g["timestamp"].max()
-
     corte_1h = ts_max - timedelta(hours=1)
     rec_1h = g[g["timestamp"] >= corte_1h]
     if len(rec_1h) < 3:
@@ -369,14 +402,9 @@ def analizar_btc(df):
         estado = "FLAT"
 
     return {
-        "estado": estado,
-        "cambio_1h": cambio_1h,
-        "cambio_4h": cambio_4h,
-        "cambio_24h": cambio_24h,
-        "vol_ratio": vol_ratio,
-        "precio": p_fin,
-        "p_min_4h": p_min_4h,
-        "pos_respecto_min": pos_respecto_min,
+        "estado": estado, "cambio_1h": cambio_1h, "cambio_4h": cambio_4h,
+        "cambio_24h": cambio_24h, "vol_ratio": vol_ratio, "precio": p_fin,
+        "p_min_4h": p_min_4h, "pos_respecto_min": pos_respecto_min,
     }
 
 
@@ -384,14 +412,10 @@ def _contexto_btc(btc):
     mapa = {
         "UP":        ("🟢 xk1: subiendo", ""),
         "FLAT":      ("⚪ xk1: neutral", ""),
-        "DOWN_SOFT": ("🟡 xk1: bajando suave",
-                      "⚠️ Mercado flojo — sé selectivo"),
-        "DOWN":      ("🔴 xk1: cayendo fuerte",
-                      "🚨 xk1 en caída — no entrar a alts"),
-        "BOTTOM":    ("🟣 xk1: fondo — dejó de caer",
-                      "⏳ Preparar entradas, esperar confirmación"),
-        "RECOVERY":  ("🟢 xk1: recovery — rebotando",
-                      "🔥 Momento óptimo para entrar a alts"),
+        "DOWN_SOFT": ("🟡 xk1: bajando suave", "⚠️ Mercado flojo — sé selectivo"),
+        "DOWN":      ("🔴 xk1: cayendo fuerte", "🚨 xk1 en caída — no entrar a alts"),
+        "BOTTOM":    ("🟣 xk1: fondo — dejó de caer", "⏳ Preparar entradas, esperar confirmación"),
+        "RECOVERY":  ("🟢 xk1: recovery — rebotando", "🔥 Momento óptimo para entrar a alts"),
         "UNKNOWN":   ("❓ xk1: sin datos", ""),
     }
     return mapa.get(btc["estado"], ("⚪ xk1: neutral", ""))
@@ -406,8 +430,7 @@ def cargar_btc_estado_previo():
         return None
     try:
         with open(BTC_STATE_FILE, "r") as f:
-            data = json.load(f)
-        return data.get("estado")
+            return json.load(f).get("estado")
     except Exception:
         return None
 
@@ -415,10 +438,7 @@ def cargar_btc_estado_previo():
 def guardar_btc_estado(estado):
     try:
         with open(BTC_STATE_FILE, "w") as f:
-            json.dump({
-                "estado": estado,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }, f)
+            json.dump({"estado": estado, "updated_at": datetime.now(timezone.utc).isoformat()}, f)
     except Exception:
         pass
 
@@ -462,49 +482,32 @@ def registrar_alerta(state, symbol, tipo):
 
 
 # ============================================================
-# ALERTA CAMBIO DE ESTADO BTC
+# ALERTA CAMBIO DE ESTADO BTC (sin cambios)
 # ============================================================
 
 def enviar_alerta_cambio_btc(estado_previo, btc):
     if estado_previo == btc["estado"]:
         return False
-
     transiciones = {
-        ("UP", "FLAT"):          ("🟡", "xk1 PERDIENDO FUERZA",
-                                  "Toma ganancias, mercado girando"),
-        ("UP", "DOWN_SOFT"):     ("🟡", "xk1 GIRANDO A LA BAJA",
-                                  "Cuidado con alts"),
-        ("UP", "DOWN"):          ("🔴", "xk1 GIRÓ A LA BAJA",
-                                  "🚨 NO ENTRAR A ALTS"),
-        ("FLAT", "DOWN_SOFT"):   ("🟡", "xk1 EMPIEZA A CAER",
-                                  "Cuidado con alts"),
-        ("FLAT", "DOWN"):        ("🔴", "xk1 CAYENDO FUERTE",
-                                  "🚨 NO ENTRAR A ALTS"),
-        ("DOWN_SOFT", "DOWN"):   ("🔴", "xk1 CAYENDO FUERTE",
-                                  "🚨 NO ENTRAR A ALTS"),
-        ("DOWN", "BOTTOM"):      ("🟣", "xk1 TOCA FONDO",
-                                  "⏳ Preparar entradas en alts"),
-        ("DOWN_SOFT", "BOTTOM"): ("🟣", "xk1 TOCA FONDO",
-                                  "⏳ Preparar entradas en alts"),
-        ("DOWN", "RECOVERY"):    ("🟢", "xk1 REBOTA",
-                                  "🔥 MOMENTO ÓPTIMO — entradas en alts"),
-        ("BOTTOM", "RECOVERY"):  ("🟢", "xk1 REBOTA",
-                                  "🔥 MOMENTO ÓPTIMO — entradas en alts"),
-        ("BOTTOM", "UP"):        ("🟢", "xk1 CONFIRMA SUBIDA",
-                                  "🟢 Buen momento para alts"),
-        ("RECOVERY", "UP"):      ("🟢", "xk1 CONFIRMA SUBIDA",
-                                  "🟢 Buen momento para alts"),
-        ("RECOVERY", "DOWN"):    ("🔴", "xk1 RECAÓ",
-                                  "🚨 Rebote fallido — no entrar"),
+        ("UP", "FLAT"):          ("🟡", "xk1 PERDIENDO FUERZA", "Toma ganancias, mercado girando"),
+        ("UP", "DOWN_SOFT"):     ("🟡", "xk1 GIRANDO A LA BAJA", "Cuidado con alts"),
+        ("UP", "DOWN"):          ("🔴", "xk1 GIRÓ A LA BAJA", "🚨 NO ENTRAR A ALTS"),
+        ("FLAT", "DOWN_SOFT"):   ("🟡", "xk1 EMPIEZA A CAER", "Cuidado con alts"),
+        ("FLAT", "DOWN"):        ("🔴", "xk1 CAYENDO FUERTE", "🚨 NO ENTRAR A ALTS"),
+        ("DOWN_SOFT", "DOWN"):   ("🔴", "xk1 CAYENDO FUERTE", "🚨 NO ENTRAR A ALTS"),
+        ("DOWN", "BOTTOM"):      ("🟣", "xk1 TOCA FONDO", "⏳ Preparar entradas en alts"),
+        ("DOWN_SOFT", "BOTTOM"): ("🟣", "xk1 TOCA FONDO", "⏳ Preparar entradas en alts"),
+        ("DOWN", "RECOVERY"):    ("🟢", "xk1 REBOTA", "🔥 MOMENTO ÓPTIMO — entradas en alts"),
+        ("BOTTOM", "RECOVERY"):  ("🟢", "xk1 REBOTA", "🔥 MOMENTO ÓPTIMO — entradas en alts"),
+        ("BOTTOM", "UP"):        ("🟢", "xk1 CONFIRMA SUBIDA", "🟢 Buen momento para alts"),
+        ("RECOVERY", "UP"):      ("🟢", "xk1 CONFIRMA SUBIDA", "🟢 Buen momento para alts"),
+        ("RECOVERY", "DOWN"):    ("🔴", "xk1 RECAÓ", "🚨 Rebote fallido — no entrar"),
     }
-
     clave = (estado_previo, btc["estado"])
     if clave not in transiciones:
         return False
-
     emoji, titulo, accion = transiciones[clave]
     hora_lima = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%H:%M")
-
     msg = (
         f"{emoji} {titulo}\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
@@ -515,23 +518,20 @@ def enviar_alerta_cambio_btc(estado_previo, btc):
         f"{accion}\n"
         f"🕐 {hora_lima} Lima"
     )
-
     return enviar_telegram(msg)
 
 
 # ============================================================
-# DETECCIÓN — SUELO
+# DETECCIÓN — SUELO (sin cambios)
 # ============================================================
 
 def detectar_suelo(df, symbol):
     g = df[df["symbol"] == symbol].sort_values("timestamp")
     if len(g) < 40:
         return None
-
     ts_max = g["timestamp"].max()
     if not es_fresco(ts_max):
         return None
-
     mc = g.iloc[-1].get("market_cap", 0) or 0
     rank = g.iloc[-1].get("cmc_rank", 9999)
     if not cumple_calidad(mc, rank):
@@ -540,18 +540,15 @@ def detectar_suelo(df, symbol):
     corte_4h  = ts_max - timedelta(hours=4)
     corte_12h = ts_max - timedelta(hours=12)
     corte_24h = ts_max - timedelta(hours=24)
-
     rec_4h  = g[g["timestamp"] >= corte_4h]
     rec_12h = g[g["timestamp"] >= corte_12h]
     rec_24h = g[g["timestamp"] >= corte_24h]
-
     if len(rec_4h) < 3 or len(rec_24h) < 5:
         return None
 
     p_ini_24h = rec_24h.iloc[0]["price"]
     p_actual  = g.iloc[-1]["price"]
     p_ini_4h  = rec_4h.iloc[0]["price"]
-
     if p_ini_24h <= 0 or p_ini_4h <= 0:
         return None
 
@@ -597,36 +594,26 @@ def detectar_suelo(df, symbol):
         return None
 
     return {
-        "tipo": "SUELO",
-        "symbol": symbol,
-        "cambio_24h": cambio_24h,
-        "cambio_4h": cambio_4h,
-        "precio": p_actual,
-        "p_min_24h": p_min_24h,
-        "dist_min": dist_min,
-        "compresion_vol": compresion_vol,
-        "compresion_rango": compresion_rango,
-        "vol_ratio": compresion_vol,
-        "vol_m": v_ult / 1e6,
-        "cmc_rank": int(rank),
-        "market_cap_m": mc / 1e6,
-        "ts": ts_max,
+        "tipo": "SUELO", "symbol": symbol,
+        "cambio_24h": cambio_24h, "cambio_4h": cambio_4h,
+        "precio": p_actual, "p_min_24h": p_min_24h, "dist_min": dist_min,
+        "compresion_vol": compresion_vol, "compresion_rango": compresion_rango,
+        "vol_ratio": compresion_vol, "vol_m": v_ult / 1e6,
+        "cmc_rank": int(rank), "market_cap_m": mc / 1e6, "ts": ts_max,
     }
 
 
 # ============================================================
-# DETECCIÓN — ARRANQUE
+# DETECCIÓN — ARRANQUE (sin cambios)
 # ============================================================
 
 def detectar_arranque(df, symbol):
     g = df[df["symbol"] == symbol].sort_values("timestamp")
     if len(g) < 40:
         return None
-
     ts_max = g["timestamp"].max()
     if not es_fresco(ts_max):
         return None
-
     mc = g.iloc[-1].get("market_cap", 0) or 0
     rank = g.iloc[-1].get("cmc_rank", 9999)
     if not cumple_calidad(mc, rank):
@@ -676,34 +663,24 @@ def detectar_arranque(df, symbol):
         return None
 
     return {
-        "tipo": "ARRANQUE",
-        "señal": señal,
-        "symbol": symbol,
-        "cambio_1h": cambio_1h,
-        "cambio_4h": cambio_4h,
-        "cambio_24h": cambio_24h,
-        "precio": p_fin,
-        "vol_ratio": vol_ratio,
-        "vol_m": v_ult / 1e6,
-        "ts": ts_max,
-        "cmc_rank": int(rank),
-        "market_cap_m": mc / 1e6,
+        "tipo": "ARRANQUE", "señal": señal, "symbol": symbol,
+        "cambio_1h": cambio_1h, "cambio_4h": cambio_4h, "cambio_24h": cambio_24h,
+        "precio": p_fin, "vol_ratio": vol_ratio, "vol_m": v_ult / 1e6,
+        "ts": ts_max, "cmc_rank": int(rank), "market_cap_m": mc / 1e6,
     }
 
 
 # ============================================================
-# DETECCIÓN — REENTRADA FIBO
+# DETECCIÓN — REENTRADA FIBO (sin cambios)
 # ============================================================
 
 def detectar_reentrada_fibo(df, symbol):
     g = df[df["symbol"] == symbol].sort_values("timestamp")
     if len(g) < 40:
         return None
-
     ts_max = g["timestamp"].max()
     if not es_fresco(ts_max):
         return None
-
     mc = g.iloc[-1].get("market_cap", 0) or 0
     rank = g.iloc[-1].get("cmc_rank", 9999)
     if not cumple_calidad(mc, rank):
@@ -717,7 +694,6 @@ def detectar_reentrada_fibo(df, symbol):
     p_min_48 = rec_48["price"].min()
     p_max_48 = rec_48["price"].max()
     p_actual = rec_48.iloc[-1]["price"]
-
     if p_min_48 <= 0 or p_max_48 <= 0:
         return None
 
@@ -758,117 +734,95 @@ def detectar_reentrada_fibo(df, symbol):
     distancia_fibo = abs(pos_actual - FIBO_IDEAL)
 
     return {
-        "tipo": "REENTRADA",
-        "symbol": symbol,
-        "pump_total": pump_total,
-        "p_max": p_max_48,
-        "p_min": p_min_48,
-        "p_actual": p_actual,
-        "p_min_pullback": p_min_pullback,
-        "fibo_382": fibo_382,
-        "fibo_500": fibo_500,
-        "fibo_618": fibo_618,
-        "pos_actual": pos_actual,
-        "rebote_pct": rebote_pct,
-        "vol_ratio": vol_ratio,
-        "vol_m": v_ult / 1e6,
+        "tipo": "REENTRADA", "symbol": symbol,
+        "pump_total": pump_total, "p_max": p_max_48, "p_min": p_min_48,
+        "p_actual": p_actual, "p_min_pullback": p_min_pullback,
+        "fibo_382": fibo_382, "fibo_500": fibo_500, "fibo_618": fibo_618,
+        "pos_actual": pos_actual, "rebote_pct": rebote_pct,
+        "vol_ratio": vol_ratio, "vol_m": v_ult / 1e6,
         "distancia_fibo": distancia_fibo,
-        "cmc_rank": int(rank),
-        "market_cap_m": mc / 1e6,
-        "ts": ts_max,
+        "cmc_rank": int(rank), "market_cap_m": mc / 1e6, "ts": ts_max,
     }
 
 
 # ============================================================
-# DETECCIÓN — ACUMULACIÓN (QNT-style)
+# DETECCIÓN — ACUMULACIÓN  [P2]
 # ============================================================
 
-def detectar_acumulacion(velas_4h, btc_estado):
-    """
-    Detecta acumulación QNT-style.
-    SOLO se busca si BTC está en FLAT, DOWN_SOFT o RECOVERY.
-    """
+def detectar_acumulacion(velas_4h, btc_estado, ahora=None):
     if btc_estado not in ("FLAT", "DOWN_SOFT", "RECOVERY"):
         return []
-
+    ahora = ahora or datetime.now(timezone.utc)
     resultados = []
 
     for sym, g in velas_4h.groupby("symbol"):
-        if sym == "xk1" or sym in EXCLUIR:
+        if str(sym).lower() in EXCLUIR or str(sym).lower() == "xk1":
             continue
 
         g = g.sort_values("vela").reset_index(drop=True)
-        if len(g) < ACUM_DUR_MIN + 5:
-            continue
-
         rank = g.iloc[-1].get("rank", 9999)
         mc = g.iloc[-1].get("mc", 0) or 0
         if not cumple_calidad(mc, rank):
             continue
 
-        ultimas = g.tail(ACUM_DUR_MIN)
-
-        p_min = ultimas["low"].min()
-        p_max = ultimas["high"].max()
-        if p_min <= 0:
+        cerradas = g[g["vela"] + timedelta(hours=4) <= ahora]
+        if len(cerradas) < ACUM_DUR_MIN + 5:
             continue
 
-        rango_pct = ((p_max - p_min) / p_min) * 100
-        if rango_pct < ACUM_RANGO_MIN or rango_pct > ACUM_RANGO_MAX:
+        base = cerradas.tail(ACUM_DUR_MIN)
+        p_min, p_max = base["low"].min(), base["high"].max()
+        if p_min <= 0 or p_max <= p_min:
             continue
 
-        p_actual = ultimas.iloc[-1]["close"]
-        if p_max <= p_min:
+        rango_pct = (p_max / p_min - 1) * 100
+        if not (ACUM_RANGO_MIN <= rango_pct <= ACUM_RANGO_MAX):
             continue
 
-        pos_rango = ((p_actual - p_min) / (p_max - p_min)) * 100
-        if pos_rango < ACUM_POS_RANGO_MIN:
-            continue
-
-        vol_medio = ultimas["volume"].mean()
-        vol_std = ultimas["volume"].std()
-        vol_cv = vol_std / vol_medio if vol_medio > 0 else 1
-
+        vol_medio = base["volume"].mean()
+        vol_cv = base["volume"].std() / vol_medio if vol_medio and vol_medio > 0 else 1
         if vol_cv > ACUM_VOL_CV_MAX:
             continue
 
-        cambio_reciente = 0
-        if len(g) >= 5:
-            cambio_reciente = ((g.iloc[-1]["close"] - g.iloc[-5]["close"])
-                               / g.iloc[-5]["close"]) * 100
+        p_actual = cerradas.iloc[-1]["close"]
+        dist_res = (p_max / p_actual - 1) * 100
+        if not (-ACUM_RUPTURA_MAX <= dist_res <= ACUM_DIST_RESIST_MAX):
+            continue
 
-        if cambio_reciente < ACUM_RUPTURA_MIN and pos_rango < 90:
+        cambio_reciente = 0.0
+        if len(cerradas) >= 5:
+            cambio_reciente = (cerradas.iloc[-1]["close"] / cerradas.iloc[-5]["close"] - 1) * 100
+        if cambio_reciente > ACUM_CAMBIO_MAX:
+            continue
+
+        u6 = base.tail(6)
+        squeeze = (u6["high"].max() - u6["low"].min()) / (p_max - p_min)
+        if squeeze > ACUM_SQUEEZE_MAX:
             continue
 
         resultados.append({
             "tipo": "ACUMULACION",
+            "fase": "RUPTURA INICIAL" if dist_res < 0 else "PRE-RUPTURA",
             "symbol": sym,
             "rango_pct": rango_pct,
-            "pos_rango": pos_rango,
+            "pos_rango": (p_actual - p_min) / (p_max - p_min) * 100,
+            "dist_resist": dist_res,
+            "squeeze": squeeze,
             "vol_medio_m": vol_medio / 1e6,
             "vol_cv": vol_cv,
             "cambio_reciente": cambio_reciente,
             "p_actual": p_actual,
-            "p_max": p_max,
-            "p_min": p_min,
-            "rank": int(rank),
-            "mc": mc,
+            "p_max": p_max, "p_min": p_min,
+            "rank": int(rank), "mc": mc,
         })
 
     return resultados
 
 
 # ============================================================
-# DETECCIÓN — TCB (Fibo en 4h + filtro de horario)
+# DETECCIÓN — TCB  [P1 + ventana deslizante 4 bloques]
 # ============================================================
 
 def detectar_tcb(df, symbol, btc_estado):
-    """
-    Detecta TCB con Fibo exacto en 4h y filtro de horario.
-    - USA Apertura (13-15 UTC): alerta + filtro 5m (EMA9+VWAP, 6 velas)
-    - Asia Apertura (00-01 UTC): alerta sin filtro
-    - Europa (07-09 UTC): solo registro (no alerta)
-    """
     if btc_estado not in ("FLAT", "DOWN_SOFT", "RECOVERY"):
         return None
 
@@ -885,35 +839,29 @@ def detectar_tcb(df, symbol, btc_estado):
     if not cumple_calidad(mc, rank):
         return None
 
-    # Agrupar en 4h para el Fibo
-    g_4h = g.copy()
-    g_4h["vela_4h"] = g_4h["timestamp"].dt.floor("4h")
-    velas_4h = g_4h.groupby("vela_4h").agg(
-        price=("price", "last"),
-        timestamp=("vela_4h", "last")
-    ).reset_index()
-
-    if len(velas_4h) < 20:
+    g4 = g.copy()
+    g4["vela_4h"] = g4["timestamp"].dt.floor("4h")
+    velas = g4.groupby("vela_4h").agg(price=("price", "last")).reset_index()
+    velas["timestamp"] = velas["vela_4h"]
+    velas = velas[velas["timestamp"] + timedelta(hours=4) <= ts_max]
+    velas = velas.reset_index(drop=True)
+    if len(velas) < 20:
         return None
 
-    ts_max_4h = velas_4h["timestamp"].max()
-    corte_72 = ts_max_4h - timedelta(hours=72)
-    rec_72 = velas_4h[velas_4h["timestamp"] >= corte_72].reset_index(drop=True)
+    corte_72 = velas["timestamp"].max() - timedelta(hours=TCB_VENTANA_H)
+    rec_72 = velas[velas["timestamp"] >= corte_72].reset_index(drop=True)
     if len(rec_72) < 10:
         return None
 
-    # Rally previo (mín → máx) en 4h
     p_min = rec_72["price"].min()
     idx_min = rec_72["price"].idxmin()
     p_max = rec_72.loc[idx_min:]["price"].max()
     idx_max = rec_72.loc[idx_min:]["price"].idxmax()
-
     if p_min <= 0 or p_max <= p_min:
         return None
 
     rango = p_max - p_min
-    rango_pct = (rango / p_min) * 100
-
+    rango_pct = rango / p_min * 100
     if rango_pct < TCB_RALLY_MIN_PCT:
         return None
 
@@ -921,43 +869,38 @@ def detectar_tcb(df, symbol, btc_estado):
     fibo_786 = p_max - rango * 0.786
     fibo_100 = p_min
 
-    post_rally = rec_72.loc[idx_max:].copy()
+    post_rally = rec_72.loc[idx_max:]
     if len(post_rally) < 2:
         return None
 
-    idx_toque = None
-    fibo_tocado = None
     TOLERANCIA = 1.5
-
-    for i in range(len(post_rally) - 1, max(-1, len(post_rally) - 3), -1):
-        precio_vela = post_rally.iloc[i]["price"]
-        idx_global = idx_max + i
-        
-        if abs(precio_vela - fibo_786) / fibo_786 * 100 <= TOLERANCIA:
-            idx_toque, fibo_tocado = idx_global, "78.6%"
+    idx_toque, fibo_tocado = None, None
+    for idx in (rec_72.index[-1], rec_72.index[-2]):
+        if idx < idx_max:
+            continue
+        pv = rec_72.loc[idx, "price"]
+        if abs(pv - fibo_786) / fibo_786 * 100 <= TOLERANCIA:
+            idx_toque, fibo_tocado = idx, "78.6%"
             break
-        elif abs(precio_vela - fibo_618) / fibo_618 * 100 <= TOLERANCIA:
-            idx_toque, fibo_tocado = idx_global, "61.8%"
+        if abs(pv - fibo_618) / fibo_618 * 100 <= TOLERANCIA:
+            idx_toque, fibo_tocado = idx, "61.8%"
             break
-        elif abs(precio_vela - fibo_100) / fibo_100 * 100 <= TOLERANCIA:
-            idx_toque, fibo_tocado = idx_global, "100%"
+        if abs(pv - fibo_100) / fibo_100 * 100 <= TOLERANCIA:
+            idx_toque, fibo_tocado = idx, "100%"
             break
-
     if idx_toque is None:
         return None
 
-    p_toque = rec_72.iloc[idx_toque]["price"]
-    ts_toque = rec_72.iloc[idx_toque]["timestamp"]
+    p_toque = float(rec_72.loc[idx_toque, "price"])
+    ts_toque = rec_72.loc[idx_toque, "timestamp"]
+    hora_utc = ts_toque.hour
 
-    post_toque = rec_72.iloc[idx_toque:]["price"]
-    if len(post_toque) < 2:
+    cfg = VENTANAS_TOQUE.get(hora_utc)
+    if cfg is None:
         return None
-    
-    p_rebote = post_toque.max()
-    rebote_pct = ((p_rebote - p_toque) / p_toque) * 100
+    ventana, con_alerta = cfg
 
-    if rebote_pct < TCB_REBOTE_MIN_PCT:
-        return None
+    ts_cierre_toque = ts_toque + timedelta(hours=4)
 
     v_base = g["volume_24h"].tail(20).mean()
     v_ult = g["volume_24h"].iloc[-1]
@@ -965,53 +908,32 @@ def detectar_tcb(df, symbol, btc_estado):
     if vol_ratio < TCB_VOL_MIN:
         return None
 
-    # === FILTRO DE HORARIO ===
-    hora_utc = ts_toque.hour
-    
-    # Europa (07-09 UTC): solo registro, no alerta
-    if 7 <= hora_utc < 9:
-        tipo_ventana = "REGISTRO_EUROPA"
-        aplicar_filtro_5m = False
-    # USA Apertura (13-15 UTC): alerta + filtro 5m
-    elif 13 <= hora_utc < 15:
-        tipo_ventana = "USA"
-        aplicar_filtro_5m = True
-    # Asia Apertura (00-01 UTC): alerta sin filtro
-    elif 0 <= hora_utc < 1:
-        tipo_ventana = "ASIA"
-        aplicar_filtro_5m = False
-    # 15:00 Lima (20-21 UTC): alerta + filtro 5m
-    elif 20 <= hora_utc < 21:
-        tipo_ventana = "LIMA_15"
-        aplicar_filtro_5m = True
-    else:
-        return None  # Fuera de ventanas válidas
+    p_actual = float(g.iloc[-1]["price"])
+    rebote_pct = 0.0
+    p_rebote = p_actual
+    bloque = None
+    minutos_confirm = None
 
-    # Aplicar filtro de 5m si corresponde (USA)
-    if aplicar_filtro_5m:
-        if not timing_5m_ok(df, symbol, ventana=TCB_CONFIRMACION_VELAS):
+    if con_alerta:
+        mov = inicio_movimiento_5m(df, symbol, ts_cierre_toque)
+        if mov is None:
             return None
-
-    p_actual = g.iloc[-1]["price"]
+        rebote_pct = mov["mov_desde_min"]
+        p_rebote = mov["p_ult"]
+        bloque = mov["bloque"]
+        minutos_confirm = mov["minutos"]
 
     return {
-        "tipo": "TCB_CONFIRMADO",
-        "symbol": symbol,
+        "tipo": "TCB_CONFIRMADO", "symbol": symbol,
         "rango_pct": rango_pct,
-        "p_min": p_min,
-        "p_max": p_max,
-        "p_actual": p_actual,
-        "p_toque": p_toque,
-        "p_rebote": p_rebote,
-        "fibo_tocado": fibo_tocado,
-        "rebote_pct": rebote_pct,
-        "vol_ratio": vol_ratio,
-        "vol_m": v_ult / 1e6,
-        "cmc_rank": int(rank),
-        "market_cap_m": mc / 1e6,
-        "ts": ts_max,
-        "hora_utc": hora_utc,
-        "ventana": tipo_ventana,
+        "p_min": p_min, "p_max": p_max, "p_actual": p_actual,
+        "p_toque": p_toque, "p_rebote": p_rebote,
+        "fibo_tocado": fibo_tocado, "rebote_pct": rebote_pct,
+        "vol_ratio": vol_ratio, "vol_m": v_ult / 1e6,
+        "cmc_rank": int(rank), "market_cap_m": mc / 1e6,
+        "ts": ts_max, "ts_toque": ts_toque,
+        "hora_utc": hora_utc, "ventana": ventana,
+        "bloque": bloque, "minutos_confirm": minutos_confirm,
     }
 
 
@@ -1022,7 +944,6 @@ def detectar_tcb(df, symbol, btc_estado):
 def enviar_alerta_suelo(a, btc):
     hora_lima = (a["ts"] - timedelta(hours=5)).strftime("%H:%M")
     linea_btc, aviso_btc = _contexto_btc(btc)
-
     msg = (
         f"🎯 SUELO DETECTADO\n"
         f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
@@ -1043,24 +964,16 @@ def enviar_alerta_suelo(a, btc):
     )
     if aviso_btc:
         msg += f"\n{aviso_btc}"
-
     return enviar_telegram(msg)
 
 
 def enviar_alerta_arranque(a, btc):
     hora_lima = (a["ts"] - timedelta(hours=5)).strftime("%H:%M")
-
     if a["señal"] == "FUERTE":
-        emoji = "🚨"
-        titulo = "ARRANQUE FUERTE"
-        nota = "✅ Volumen CONFIRMA"
+        emoji, titulo, nota = "🚨", "ARRANQUE FUERTE", "✅ Volumen CONFIRMA"
     else:
-        emoji = "🟡"
-        titulo = "ARRANQUE TEMPRANO"
-        nota = "⚠️ Verificar gráfico"
-
+        emoji, titulo, nota = "🟡", "ARRANQUE TEMPRANO", "⚠️ Verificar gráfico"
     linea_btc, aviso_btc = _contexto_btc(btc)
-
     msg = (
         f"{emoji} {titulo}\n"
         f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
@@ -1076,14 +989,12 @@ def enviar_alerta_arranque(a, btc):
     )
     if aviso_btc:
         msg += f"\n{aviso_btc}"
-
     return enviar_telegram(msg)
 
 
 def enviar_alerta_reentrada(a, btc):
     hora_lima = (a["ts"] - timedelta(hours=5)).strftime("%H:%M")
     linea_btc, aviso_btc = _contexto_btc(btc)
-
     msg = (
         f"📐 REENTRADA FIBO\n"
         f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
@@ -1108,14 +1019,12 @@ def enviar_alerta_reentrada(a, btc):
     )
     if aviso_btc:
         msg += f"\n{aviso_btc}"
-
     return enviar_telegram(msg)
 
 
 def enviar_alerta_acumulacion(a, btc):
     hora_lima = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%H:%M")
     linea_btc, aviso_btc = _contexto_btc(btc)
-
     msg = (
         f"🚀 ACUMULACIÓN DETECTADA\n"
         f"🪙 {a_real(a['symbol'])} (rank {a['rank']})\n"
@@ -1130,11 +1039,10 @@ def enviar_alerta_acumulacion(a, btc):
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"{linea_btc}\n"
         f"🕐 {hora_lima} Lima\n"
-        f"💡 QNT-style: posible explosión"
+        f"💡 {a['fase']} | resistencia a {a['dist_resist']:+.2f}%"
     )
     if aviso_btc:
         msg += f"\n{aviso_btc}"
-
     return enviar_telegram(msg)
 
 
@@ -1145,12 +1053,23 @@ def enviar_alerta_tcb(a, btc):
     ventana = a.get("ventana", "")
     if ventana == "USA":
         emoji_ventana = "🔥 APERTURA USA"
+    elif ventana == "USA_CIERRE":
+        emoji_ventana = "🔥 CIERRE USA (15:00 Lima)"
     elif ventana == "ASIA":
         emoji_ventana = "✅ ASIA"
+    elif ventana == "LIMA_03":
+        emoji_ventana = "🌙🇵🇪 CIERRE 03:00 LIMA"
     elif ventana == "LIMA_15":
         emoji_ventana = "🔥🇵🇪 15:00 LIMA ⭐"
     else:
         emoji_ventana = ""
+
+    bloque = a.get("bloque")
+    minutos_confirm = a.get("minutos_confirm")
+    if bloque is not None and minutos_confirm is not None:
+        linea_timing = f"⏱️ Confirmado en bloque {bloque} ({minutos_confirm} min post-toque)\n"
+    else:
+        linea_timing = ""
 
     msg = (
         f"✅ TCB CONFIRMADO — {a_real(a['symbol'])}\n"
@@ -1162,6 +1081,7 @@ def enviar_alerta_tcb(a, btc):
         f"   Mín: ${a['p_min']:.6f}\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"🎯 Tocó Fibo {a['fibo_tocado']} en ${a['p_toque']:.6f}\n"
+        f"{linea_timing}"
         f"📈 Rebote confirmado: +{a['rebote_pct']:.2f}%\n"
         f"💰 Precio actual: ${a['p_actual']:.6f}\n"
         f"💧 Vol: ${a['vol_m']:.1f}M | {a['vol_ratio']:.2f}x\n"
@@ -1171,10 +1091,8 @@ def enviar_alerta_tcb(a, btc):
         f"🕐 {hora_lima} Lima\n"
         f"✅ ENTRADA CONFIRMADA"
     )
-
     if aviso_btc:
         msg += f"\n{aviso_btc}"
-
     return enviar_telegram(msg)
 
 
@@ -1187,7 +1105,7 @@ def main():
     ahora_lima = ahora - timedelta(hours=5)
 
     print(f"\n{'='*70}")
-    print(f"🎯 SUELO + ⚡ ARRANQUE + 📐 REENTRADA + 🚀 ACUM + 🚀 TCB (USA/Asia) — xk1 6 ESTADOS")
+    print(f"🎯 SUELO + ⚡ ARRANQUE + 📐 REENTRADA + 🚀 ACUM + 🚀 TCB — xk1 6 ESTADOS")
     print(f"   UTC:  {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"   Lima: {ahora_lima.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*70}")
@@ -1195,16 +1113,13 @@ def main():
     df = cargar_datos()
     print(f"📊 Total: {len(df):,} filas | {df['symbol'].nunique()} monedas")
 
-    # === ANÁLISIS xk1 ===
     btc = analizar_btc(df)
     linea_btc, aviso_btc = _contexto_btc(btc)
-
     print(f"\n🔍 CONTEXTO {a_real('xk1')}:")
     print(f"   {linea_btc}")
     if aviso_btc:
         print(f"   {aviso_btc}")
 
-    # === AVISO DE CAMBIO DE ESTADO xk1 ===
     estado_previo = cargar_btc_estado_previo()
     if estado_previo and estado_previo != btc["estado"]:
         print(f"\n🔄 Cambio {a_real('xk1')}: {estado_previo} → {btc['estado']}")
@@ -1212,22 +1127,15 @@ def main():
             print(f"   📱 Alerta de cambio {a_real('xk1')} enviada")
     guardar_btc_estado(btc["estado"])
 
-    # === CARGAR ESTADO DE ALERTAS (cooldown) ===
     alertas_state = cargar_alertas_state()
-
-    # === ESCANEO ===
     todas = df["symbol"].unique()
     print(f"\n🔍 Escaneando {len(todas)} monedas...")
 
-    suelos = []
-    fuertes = []
-    tempranas = []
-    reentradas = []
-    acumulaciones = []
-    tcb_detectados = []
+    suelos, fuertes, tempranas = [], [], []
+    reentradas, acumulaciones, tcb_detectados = [], [], []
 
     for sym in todas:
-        if sym.upper() in EXCLUIR or sym.upper() == "xk1":
+        if str(sym).lower() in EXCLUIR or str(sym).lower() == "xk1":
             continue
 
         r0 = detectar_suelo(df, sym)
@@ -1249,11 +1157,9 @@ def main():
         if r5:
             tcb_detectados.append(r5)
 
-    # === ESCANEO ACUM (velas 4h) ===
     print(f"\n📊 Generando velas 4h para ACUM...")
     velas_4h = hacer_velas_4h(df)
-    acum_list = detectar_acumulacion(velas_4h, btc["estado"])
-    acumulaciones.extend(acum_list)
+    acumulaciones = detectar_acumulacion(velas_4h, btc["estado"], ahora)
 
     print(f"\n   🎯 SUELOS:        {len(suelos)}")
     print(f"   🚨 FUERTES:       {len(fuertes)}")
@@ -1262,9 +1168,6 @@ def main():
     print(f"   🚀 ACUMULACIONES: {len(acumulaciones)}")
     print(f"   🚀 TCB DETECTADOS: {len(tcb_detectados)}")
 
-    # ═══════════════════════════════════════════════════════════
-    # BLOQUEO GRADUAL SEGÚN xk1
-    # ═══════════════════════════════════════════════════════════
     enviadas = 0
     btc_estado = btc.get("estado", "FLAT")
 
@@ -1273,14 +1176,14 @@ def main():
     bloquear_reentradas = btc_estado == "DOWN"
 
     print(f"\n📋 Política {a_real('xk1')} {btc_estado}:")
-    print(f"   SUELOS:        ✅ siempre permitidos (preparación)")
+    print(f"   SUELOS:        ✅ siempre permitidos")
     print(f"   TEMPRANAS:     {'🚫 bloqueadas' if bloquear_tempranas else '✅ permitidas'}")
     print(f"   FUERTES:       {'🚫 bloqueadas' if bloquear_fuertes else '✅ permitidas'}")
     print(f"   REENTRADAS:    {'🚫 bloqueadas' if bloquear_reentradas else '✅ permitidas'}")
-    print(f"   ACUMULACIONES: {'✅ permitidas' if btc_estado in ('FLAT', 'DOWN_SOFT', 'RECOVERY') else '🚫 bloqueadas (BTC ' + btc_estado + ')'}")
-    print(f"   TCB:           {'✅ permitidos' if btc_estado in ('FLAT', 'DOWN_SOFT', 'RECOVERY') else '🚫 bloqueados (BTC ' + btc_estado + ')'}")
+    print(f"   ACUMULACIONES: {'✅ permitidas' if btc_estado in ('FLAT','DOWN_SOFT','RECOVERY') else '🚫 bloqueadas'}")
+    print(f"   TCB:           {'✅ permitidos' if btc_estado in ('FLAT','DOWN_SOFT','RECOVERY') else '🚫 bloqueados'}")
 
-    # ─── SUELOS ───
+    # SUELOS
     suelos.sort(key=lambda x: x["dist_min"])
     for a in suelos[:MAX_POR_TIPO]:
         if not paso_cooldown(alertas_state, a["symbol"], "SUELO", COOLDOWN_SUELO):
@@ -1288,51 +1191,45 @@ def main():
         if enviar_alerta_suelo(a, btc):
             enviadas += 1
             registrar_alerta(alertas_state, a["symbol"], "SUELO")
-            print(f"   🎯 SUELO: {a_real(a['symbol'])} "
-                  f"(24h {a['cambio_24h']:+.1f}% | "
-                  f"vol {a['compresion_vol']:.2f}x)")
+            print(f"   🎯 SUELO: {a_real(a['symbol'])}")
 
-    # ─── ACUMULACIONES ───
-    acumulaciones.sort(key=lambda x: (-x["pos_rango"], x["vol_cv"]))
+    # ACUM
+    acumulaciones.sort(key=lambda x: abs(x["dist_resist"]))
     for a in acumulaciones[:MAX_POR_TIPO]:
         if not paso_cooldown(alertas_state, a["symbol"], "ACUM", COOLDOWN_ACUM):
             continue
         if enviar_alerta_acumulacion(a, btc):
             enviadas += 1
             registrar_alerta(alertas_state, a["symbol"], "ACUM")
-            print(f"   🚀 ACUM: {a_real(a['symbol'])} "
-                  f"(rango {a['rango_pct']:.1f}% | pos {a['pos_rango']:.0f}% | "
-                  f"vol cv {a['vol_cv']:.2f})")
+            print(f"   🚀 ACUM: {a_real(a['symbol'])} ({a['fase']})")
 
-    # ─── TCB (USA + ASIA con alerta, EUROPA solo registro) ───
+    # TCB
     registro_europa = []
     for a in tcb_detectados[:MAX_POR_TIPO]:
         ventana = a.get("ventana", "")
-        
-        # Europa: solo registro, no alerta
+
         if ventana == "REGISTRO_EUROPA":
-            registro_europa.append(a)
-            print(f"   📝 REGISTRO EUROPA: {a_real(a['symbol'])} (hora {a['hora_utc']:02d}:00 UTC)")
+            if paso_cooldown(alertas_state, a["symbol"], "EUROPA", COOLDOWN_EUROPA):
+                registro_europa.append(a)
+                registrar_alerta(alertas_state, a["symbol"], "EUROPA")
+                print(f"   📝 REGISTRO EUROPA: {a_real(a['symbol'])}")
             continue
-        
-        # USA / Asia: alerta
+
         if not paso_cooldown(alertas_state, a["symbol"], "TCB", COOLDOWN_TCB_CONFIRMADO):
             continue
         if enviar_alerta_tcb(a, btc):
             enviadas += 1
             registrar_alerta(alertas_state, a["symbol"], "TCB")
-            print(f"   ✅ TCB: {a_real(a['symbol'])} "
-                  f"(Tocó {a['fibo_tocado']} | {ventana} | "
-                  f"rebote {a['rebote_pct']:+.1f}%)")
+            print(f"   ✅ TCB: {a_real(a['symbol'])} ({ventana})")
 
-    # Guardar registro de Europa
     if registro_europa:
         df_europa = pd.DataFrame(registro_europa)
         archivo_europa = "registro_europa.csv"
-        df_europa.to_csv(archivo_europa, mode="a", header=not os.path.exists(archivo_europa), index=False)
-        print(f"   📝 {len(registro_europa)} toques de Europa registrados en {archivo_europa}")
+        df_europa.to_csv(archivo_europa, mode="a",
+                         header=not os.path.exists(archivo_europa), index=False)
+        print(f"   📝 {len(registro_europa)} toques registrados en {archivo_europa}")
 
-    # ─── FUERTES ───
+    # FUERTES
     if not bloquear_fuertes:
         fuertes.sort(key=lambda x: -x["cambio_1h"])
         for a in fuertes[:MAX_POR_TIPO]:
@@ -1341,12 +1238,9 @@ def main():
             if enviar_alerta_arranque(a, btc):
                 enviadas += 1
                 registrar_alerta(alertas_state, a["symbol"], "ARRANQUE")
-                print(f"   🚨 FUERTE: {a_real(a['symbol'])} (+{a['cambio_1h']:.2f}% | "
-                      f"vol {a['vol_ratio']:.2f}x)")
-    elif fuertes:
-        print(f"\n   ⏸️ {len(fuertes)} FUERTES bloqueadas por {a_real('xk1')} {btc_estado}")
+                print(f"   🚨 FUERTE: {a_real(a['symbol'])}")
 
-    # ─── TEMPRANAS ───
+    # TEMPRANAS
     if not bloquear_tempranas:
         tempranas.sort(key=lambda x: -x["cambio_1h"])
         for a in tempranas[:MAX_POR_TIPO]:
@@ -1355,12 +1249,9 @@ def main():
             if enviar_alerta_arranque(a, btc):
                 enviadas += 1
                 registrar_alerta(alertas_state, a["symbol"], "ARRANQUE")
-                print(f"   🟡 TEMPRANA: {a_real(a['symbol'])} (+{a['cambio_1h']:.2f}% | "
-                      f"vol {a['vol_ratio']:.2f}x)")
-    elif tempranas:
-        print(f"   ⏸️ {len(tempranas)} TEMPRANAS bloqueadas por {a_real('xk1')} {btc_estado}")
+                print(f"   🟡 TEMPRANA: {a_real(a['symbol'])}")
 
-    # ─── REENTRADAS ───
+    # REENTRADAS
     if not bloquear_reentradas:
         reentradas.sort(key=lambda x: (x["distancia_fibo"], -x["vol_ratio"]))
         for a in reentradas[:MAX_POR_TIPO]:
@@ -1369,15 +1260,10 @@ def main():
             if enviar_alerta_reentrada(a, btc):
                 enviadas += 1
                 registrar_alerta(alertas_state, a["symbol"], "REENTRADA")
-                print(f"   📐 REENTRADA: {a_real(a['symbol'])} "
-                      f"(fibo {a['pos_actual']:.1f}% | vol {a['vol_ratio']:.2f}x)")
-    elif reentradas:
-        print(f"   ⏸️ {len(reentradas)} REENTRADAS bloqueadas por {a_real('xk1')} {btc_estado}")
+                print(f"   📐 REENTRADA: {a_real(a['symbol'])}")
 
-    # === GUARDAR ESTADO DE ALERTAS ===
     guardar_alertas_state(alertas_state)
 
-    # === RESUMEN ===
     print(f"\n{'='*70}")
     print(f"📢 RESUMEN")
     print(f"   {linea_btc}")
