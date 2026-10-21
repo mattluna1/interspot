@@ -1178,6 +1178,70 @@ def main():
     velas_4h = hacer_velas_4h(df)
     acumulaciones = detectar_acumulacion(velas_4h, btc["estado"], ahora)
 
+    # === DEBUG CANDIDATAS ACUM (solo consola) ===
+    print(f"\n🔍 CANDIDATAS ACUM (cerca de resistencia, dist_resist <= 3%):")
+    print(f"   {'SYM':<12} {'dist_res':<10} {'cambio':<10} {'rango':<8} {'squeeze':<8} {'vol_cv':<8} {'¿Pasa?'}")
+    print(f"   {'-'*80}")
+
+    candidatas_count = 0
+    for sym, g in velas_4h.groupby("symbol"):
+        if str(sym).lower() in EXCLUIR or str(sym).lower() == "xk1":
+            continue
+
+        g = g.sort_values("vela").reset_index(drop=True)
+        rank = g.iloc[-1].get("rank", 9999)
+        mc = g.iloc[-1].get("mc", 0) or 0
+        if not cumple_calidad(mc, rank):
+            continue
+
+        cerradas = g[g["vela"] + timedelta(hours=4) <= ahora]
+        if len(cerradas) < ACUM_DUR_MIN + 5:
+            continue
+
+        base = cerradas.tail(ACUM_DUR_MIN)
+        p_min, p_max = base["low"].min(), base["high"].max()
+        if p_min <= 0 or p_max <= p_min:
+            continue
+
+        p_actual = cerradas.iloc[-1]["close"]
+        dist_res = (p_max / p_actual - 1) * 100
+
+        if dist_res > 3.0 or dist_res < -2.0:
+            continue
+
+        candidatas_count += 1
+
+        rango_pct = (p_max / p_min - 1) * 100
+        vol_medio = base["volume"].mean()
+        vol_cv = base["volume"].std() / vol_medio if vol_medio and vol_medio > 0 else 1
+        cambio_reciente = 0.0
+        if len(cerradas) >= 5:
+            cambio_reciente = (cerradas.iloc[-1]["close"] / cerradas.iloc[-5]["close"] - 1) * 100
+        u6 = base.tail(6)
+        squeeze = (u6["high"].max() - u6["low"].min()) / (p_max - p_min) if (p_max - p_min) > 0 else 1
+
+        pasa_rango = ACUM_RANGO_MIN <= rango_pct <= ACUM_RANGO_MAX
+        pasa_vol = vol_cv <= ACUM_VOL_CV_MAX
+        pasa_cambio = cambio_reciente <= ACUM_CAMBIO_MAX
+        pasa_squeeze = squeeze <= ACUM_SQUEEZE_MAX
+        pasa_dist = -ACUM_RUPTURA_MAX <= dist_res <= ACUM_DIST_RESIST_MAX
+
+        pasa_todo = pasa_rango and pasa_vol and pasa_cambio and pasa_squeeze and pasa_dist
+
+        estado = "✅ SÍ" if pasa_todo else "❌ NO"
+        falla = []
+        if not pasa_rango: falla.append("rango")
+        if not pasa_vol: falla.append("vol")
+        if not pasa_cambio: falla.append("cambio")
+        if not pasa_squeeze: falla.append("squeeze")
+        if not pasa_dist: falla.append("dist")
+
+        print(f"   {sym:<12} {dist_res:>+7.2f}% {cambio_reciente:>+7.2f}% {rango_pct:>6.1f}%  {squeeze:>6.2f}  {vol_cv:>6.2f}  {estado} {', '.join(falla)}")
+
+    print(f"\n   Total candidatas: {candidatas_count}")
+    print(f"   Pasan todos los filtros: {len(acumulaciones)}")
+    # === FIN DEBUG CANDIDATAS ===
+
     # === DEBUG TEMPORAL ===
     print(f"\n🔍 DEBUG ACUM ({len(acumulaciones)} detectadas):")
     for a in acumulaciones[:MAX_POR_TIPO]:
