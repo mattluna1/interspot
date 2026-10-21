@@ -140,7 +140,8 @@ ACUM_VOL_CV_MAX      = 0.35
 ACUM_DUR_MIN         = 20
 ACUM_DIST_RESIST_MAX = 1.5
 ACUM_RUPTURA_MAX     = 2.0
-ACUM_CAMBIO_MAX      = 4.0
+ACUM_CAMBIO_MIN      = 1.0
+ACUM_CAMBIO_MAX      = 2.5
 ACUM_SQUEEZE_MAX     = 0.60
 
 
@@ -797,6 +798,8 @@ def detectar_acumulacion(velas_4h, btc_estado, ahora=None):
         cambio_reciente = 0.0
         if len(cerradas) >= 5:
             cambio_reciente = (cerradas.iloc[-1]["close"] / cerradas.iloc[-5]["close"] - 1) * 100
+        if cambio_reciente < ACUM_CAMBIO_MIN:
+            continue
         if cambio_reciente > ACUM_CAMBIO_MAX:
             continue
 
