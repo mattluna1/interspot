@@ -7,6 +7,7 @@ Parches aplicados:
   - P1 TCB: 6 velas 5m por bloque, ventana deslizante hasta 4 bloques (2h)
   - P2 ACUM: pre-ruptura / ruptura inicial (dispara antes)
   - P3 bugs: format="mixed", refs/heads/main/, sin 201_300, EXCLUIR lower, USDGO/USDf
+  - P4 201_300: archivos diarios de los últimos 3 días (hoy, ayer, anteayer)
 """
 
 import json
@@ -59,10 +60,13 @@ def a_real(alias):
 
 
 # ============================================================
-# URLs  [P3.2] refs/heads/main/ | [P3.3] sin 201_300
+# URLs
+#   - top100 / emerging: archivo único acumulado (sin cambios)
+#   - 201_300: archivos diarios de los últimos 3 días (migrado)
 # ============================================================
 
-CSV_URLS = {
+# Fuentes con archivo único (una sola URL)
+CSV_URLS_FIJAS = {
     "top100": (
         "https://raw.githubusercontent.com/mattluna3/inspector/"
         "refs/heads/main/data/cmc/market_history_top100.csv"
@@ -71,11 +75,35 @@ CSV_URLS = {
         "https://raw.githubusercontent.com/mattluna3/inspector/"
         "refs/heads/main/data/cmc/market_history_emerging.csv"
     ),
+}
+
+# Fuentes con archivos diarios (base sin fecha ni .csv)
+CSV_BASES_DIARIAS = {
     "201_300": (
         "https://raw.githubusercontent.com/emerging2/inspector2/"
-        "refs/heads/main/data/cmc/market_history_201_300.csv"
+        "refs/heads/main/data/cmc/market_history_201_300"
     ),
 }
+
+DIAS_ATRAS = 2  # hoy + 2 días atrás = 3 días totales
+
+
+def construir_urls_diarias():
+    """
+    Genera las URLs de los archivos diarios de los últimos 3 días
+    (hoy, ayer, anteayer) para las fuentes que migraron a archivos por día.
+    Devuelve dict: nombre_fuente -> lista de URLs.
+    """
+    hoy = datetime.now(timezone.utc).date()
+    urls = {}
+    for nombre, base in CSV_BASES_DIARIAS.items():
+        lista = []
+        for i in range(DIAS_ATRAS + 1):
+            dia = hoy - timedelta(days=i)
+            lista.append(f"{base}_{dia.isoformat()}.csv")
+        urls[nombre] = lista
+    return urls
+
 
 # [P3.4] stables y wrapped, incluyendo USDGO y USDf
 EXCLUIR = {
@@ -219,11 +247,14 @@ def enviar_telegram(msg):
 
 # ============================================================
 # CARGA  [P3.1] format="mixed" + headers anti-caché
+#        [P4] 201_300 une los 3 archivos diarios
 # ============================================================
 
 def cargar_datos():
     dfs = []
-    for nombre, url in CSV_URLS.items():
+
+    # --- Fuentes con archivo único (top100, emerging) ---
+    for nombre, url in CSV_URLS_FIJAS.items():
         try:
             r = requests.get(url, timeout=30, headers={
                 "Cache-Control": "no-cache",
@@ -232,15 +263,42 @@ def cargar_datos():
             r.raise_for_status()
             df = pd.read_csv(StringIO(r.text), low_memory=False)
             df["_fuente"] = nombre
+            df["_archivo"] = url.rsplit("/", 1)[-1]
             if REAL_A_ALIAS and "symbol" in df.columns:
                 df["symbol"] = (
                     df["symbol"].astype(str).str.strip().str.upper()
                     .map(lambda s: a_alias(s))
                 )
             dfs.append(df)
-            print(f"✅ {nombre}: {len(df):,} filas")
+            print(f"✅ {nombre} {url.rsplit('/',1)[-1]}: {len(df):,} filas")
         except Exception as e:
             print(f"⚠️ {nombre}: {str(e)[:80]}")
+
+    # --- Fuentes con archivos diarios (201_300) ---
+    urls_diarias = construir_urls_diarias()
+    for nombre, urls in urls_diarias.items():
+        for url in urls:
+            try:
+                r = requests.get(url, timeout=30, headers={
+                    "Cache-Control": "no-cache",
+                    "Pragma": "no-cache",
+                })
+                if r.status_code == 404:
+                    print(f"   ⚠️ {nombre} {url.rsplit('/',1)[-1]}: no existe (404)")
+                    continue
+                r.raise_for_status()
+                df = pd.read_csv(StringIO(r.text), low_memory=False)
+                df["_fuente"] = nombre
+                df["_archivo"] = url.rsplit("/", 1)[-1]
+                if REAL_A_ALIAS and "symbol" in df.columns:
+                    df["symbol"] = (
+                        df["symbol"].astype(str).str.strip().str.upper()
+                        .map(lambda s: a_alias(s))
+                    )
+                dfs.append(df)
+                print(f"✅ {nombre} {url.rsplit('/',1)[-1]}: {len(df):,} filas")
+            except Exception as e:
+                print(f"⚠️ {nombre} {url.rsplit('/',1)[-1]}: {str(e)[:80]}")
 
     if not dfs:
         sys.exit("❌ No se pudo cargar ningún CSV")
