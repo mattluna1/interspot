@@ -7,7 +7,6 @@ Parches aplicados:
   - P1 TCB: 6 velas 5m por bloque, ventana deslizante hasta 4 bloques (2h)
   - P2 ACUM: pre-ruptura / ruptura inicial (dispara antes)
   - P3 bugs: format="mixed", refs/heads/main/, sin 201_300, EXCLUIR lower, USDGO/USDf
-  - P4 201_300: archivos diarios de los últimos 3 días (hoy, ayer, anteayer)
 """
 
 import json
@@ -60,46 +59,23 @@ def a_real(alias):
 
 
 # ============================================================
-# URLs
-#   - top100 / emerging / 201_300: archivos diarios
+# URLs  [P3.2] refs/heads/main/ | [P3.3] sin 201_300
 # ============================================================
 
-CSV_URLS_FIJAS = {}  # VACÍO: ya no usamos archivos acumulados
-
-CSV_BASES_DIARIAS = {
+CSV_URLS = {
     "top100": (
         "https://raw.githubusercontent.com/mattluna3/inspector/"
-        "refs/heads/main/data/cmc/market_history_top100"
+        "refs/heads/main/data/cmc/market_history_top100.csv"
     ),
     "emerging": (
         "https://raw.githubusercontent.com/mattluna3/inspector/"
-        "refs/heads/main/data/cmc/market_history_emerging"
+        "refs/heads/main/data/cmc/market_history_emerging.csv"
     ),
     "201_300": (
         "https://raw.githubusercontent.com/emerging2/inspector2/"
-        "refs/heads/main/data/cmc/market_history_201_300"
+        "refs/heads/main/data/cmc/market_history_201_300.csv"
     ),
 }
-
-DIAS_ATRAS = 2  # hoy + 2 días atrás = 3 días totales
-
-
-def construir_urls_diarias():
-    """
-    Genera las URLs de los archivos diarios de los últimos 3 días
-    (hoy, ayer, anteayer) para las fuentes que migraron a archivos por día.
-    Devuelve dict: nombre_fuente -> lista de URLs.
-    """
-    hoy = datetime.now(timezone.utc).date()
-    urls = {}
-    for nombre, base in CSV_BASES_DIARIAS.items():
-        lista = []
-        for i in range(DIAS_ATRAS + 1):
-            dia = hoy - timedelta(days=i)
-            lista.append(f"{base}_{dia.isoformat()}.csv")
-        urls[nombre] = lista
-    return urls
-
 
 # [P3.4] stables y wrapped, incluyendo USDGO y USDf
 EXCLUIR = {
@@ -243,14 +219,11 @@ def enviar_telegram(msg):
 
 # ============================================================
 # CARGA  [P3.1] format="mixed" + headers anti-caché
-#        [P4] 201_300 une los 3 archivos diarios
 # ============================================================
 
 def cargar_datos():
     dfs = []
-
-    # --- Fuentes con archivo único (vacío ahora) ---
-    for nombre, url in CSV_URLS_FIJAS.items():
+    for nombre, url in CSV_URLS.items():
         try:
             r = requests.get(url, timeout=30, headers={
                 "Cache-Control": "no-cache",
@@ -259,47 +232,21 @@ def cargar_datos():
             r.raise_for_status()
             df = pd.read_csv(StringIO(r.text), low_memory=False)
             df["_fuente"] = nombre
-            df["_archivo"] = url.rsplit("/", 1)[-1]
             if REAL_A_ALIAS and "symbol" in df.columns:
                 df["symbol"] = (
                     df["symbol"].astype(str).str.strip().str.upper()
                     .map(lambda s: a_alias(s))
                 )
             dfs.append(df)
-            print(f"✅ {nombre} {url.rsplit('/',1)[-1]}: {len(df):,} filas")
+            print(f"✅ {nombre}: {len(df):,} filas")
         except Exception as e:
             print(f"⚠️ {nombre}: {str(e)[:80]}")
-
-    # --- Fuentes con archivos diarios ---
-    urls_diarias = construir_urls_diarias()
-    for nombre, urls in urls_diarias.items():
-        for url in urls:
-            try:
-                r = requests.get(url, timeout=30, headers={
-                    "Cache-Control": "no-cache",
-                    "Pragma": "no-cache",
-                })
-                if r.status_code == 404:
-                    print(f"   ⚠️ {nombre} {url.rsplit('/',1)[-1]}: no existe (404)")
-                    continue
-                r.raise_for_status()
-                df = pd.read_csv(StringIO(r.text), low_memory=False)
-                df["_fuente"] = nombre
-                df["_archivo"] = url.rsplit("/", 1)[-1]
-                if REAL_A_ALIAS and "symbol" in df.columns:
-                    df["symbol"] = (
-                        df["symbol"].astype(str).str.strip().str.upper()
-                        .map(lambda s: a_alias(s))
-                    )
-                dfs.append(df)
-                print(f"✅ {nombre} {url.rsplit('/',1)[-1]}: {len(df):,} filas")
-            except Exception as e:
-                print(f"⚠️ {nombre} {url.rsplit('/',1)[-1]}: {str(e)[:80]}")
 
     if not dfs:
         sys.exit("❌ No se pudo cargar ningún CSV")
 
     df = pd.concat(dfs, ignore_index=True)
+    # [P3.1] format="mixed" — CRÍTICO
     df["timestamp"] = pd.to_datetime(
         df["timestamp"], utc=True, errors="coerce", format="mixed"
     )
@@ -411,7 +358,7 @@ def inicio_movimiento_5m(df, symbol, ts_cierre_vela,
 
 
 # ============================================================
-# ANÁLISIS BTC — 6 ESTADOS
+# ANÁLISIS BTC — 6 ESTADOS (sin cambios)
 # ============================================================
 
 def analizar_btc(df):
@@ -419,19 +366,6 @@ def analizar_btc(df):
     if len(g) < 40:
         return {"estado": "UNKNOWN", "cambio_1h": 0, "cambio_4h": 0,
                 "cambio_24h": 0, "vol_ratio": 0, "precio": 0}
-
-    # --- NUEVO: Ignorar el día actual si está incompleto ---
-    # Si el último día tiene menos de 40 filas (porque acaba de empezar), 
-    # usamos el día anterior completo para que el análisis no falle.
-    fecha_max = g["timestamp"].max().date()
-    datos_hoy = g[g["timestamp"].dt.date == fecha_max]
-    
-    if len(datos_hoy) < 40:
-        print(f"   ⚠️ Archivo del {fecha_max} incompleto ({len(datos_hoy)} filas). Analizando el día anterior...")
-        g = g[g["timestamp"].dt.date < fecha_max]
-        if len(g) < 40:
-            return {"estado": "UNKNOWN", "cambio_1h": 0, "cambio_4h": 0,
-                    "cambio_24h": 0, "vol_ratio": 0, "precio": 0}
 
     ts_max = g["timestamp"].max()
     corte_1h = ts_max - timedelta(hours=1)
