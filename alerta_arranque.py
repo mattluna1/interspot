@@ -411,7 +411,7 @@ def inicio_movimiento_5m(df, symbol, ts_cierre_vela,
 
 
 # ============================================================
-# ANÁLISIS BTC — 6 ESTADOS (sin cambios)
+# ANÁLISIS BTC — 6 ESTADOS
 # ============================================================
 
 def analizar_btc(df):
@@ -419,6 +419,19 @@ def analizar_btc(df):
     if len(g) < 40:
         return {"estado": "UNKNOWN", "cambio_1h": 0, "cambio_4h": 0,
                 "cambio_24h": 0, "vol_ratio": 0, "precio": 0}
+
+    # --- NUEVO: Ignorar el día actual si está incompleto ---
+    # Si el último día tiene menos de 40 filas (porque acaba de empezar), 
+    # usamos el día anterior completo para que el análisis no falle.
+    fecha_max = g["timestamp"].max().date()
+    datos_hoy = g[g["timestamp"].dt.date == fecha_max]
+    
+    if len(datos_hoy) < 40:
+        print(f"   ⚠️ Archivo del {fecha_max} incompleto ({len(datos_hoy)} filas). Analizando el día anterior...")
+        g = g[g["timestamp"].dt.date < fecha_max]
+        if len(g) < 40:
+            return {"estado": "UNKNOWN", "cambio_1h": 0, "cambio_4h": 0,
+                    "cambio_24h": 0, "vol_ratio": 0, "precio": 0}
 
     ts_max = g["timestamp"].max()
     corte_1h = ts_max - timedelta(hours=1)
