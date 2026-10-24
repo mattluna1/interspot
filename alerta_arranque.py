@@ -61,24 +61,20 @@ def a_real(alias):
 
 # ============================================================
 # URLs
-#   - top100 / emerging: archivo único acumulado (sin cambios)
-#   - 201_300: archivos diarios de los últimos 3 días (migrado)
+#   - top100 / emerging / 201_300: archivos diarios
 # ============================================================
 
-# Fuentes con archivo único (una sola URL)
-CSV_URLS_FIJAS = {
+CSV_URLS_FIJAS = {}  # VACÍO: ya no usamos archivos acumulados
+
+CSV_BASES_DIARIAS = {
     "top100": (
         "https://raw.githubusercontent.com/mattluna3/inspector/"
-        "refs/heads/main/data/cmc/market_history_top100.csv"
+        "refs/heads/main/data/cmc/market_history_top100"
     ),
     "emerging": (
         "https://raw.githubusercontent.com/mattluna3/inspector/"
-        "refs/heads/main/data/cmc/market_history_emerging.csv"
+        "refs/heads/main/data/cmc/market_history_emerging"
     ),
-}
-
-# Fuentes con archivos diarios (base sin fecha ni .csv)
-CSV_BASES_DIARIAS = {
     "201_300": (
         "https://raw.githubusercontent.com/emerging2/inspector2/"
         "refs/heads/main/data/cmc/market_history_201_300"
@@ -253,7 +249,7 @@ def enviar_telegram(msg):
 def cargar_datos():
     dfs = []
 
-    # --- Fuentes con archivo único (top100, emerging) ---
+    # --- Fuentes con archivo único (vacío ahora) ---
     for nombre, url in CSV_URLS_FIJAS.items():
         try:
             r = requests.get(url, timeout=30, headers={
@@ -274,7 +270,7 @@ def cargar_datos():
         except Exception as e:
             print(f"⚠️ {nombre}: {str(e)[:80]}")
 
-    # --- Fuentes con archivos diarios (201_300) ---
+    # --- Fuentes con archivos diarios ---
     urls_diarias = construir_urls_diarias()
     for nombre, urls in urls_diarias.items():
         for url in urls:
@@ -304,7 +300,6 @@ def cargar_datos():
         sys.exit("❌ No se pudo cargar ningún CSV")
 
     df = pd.concat(dfs, ignore_index=True)
-    # [P3.1] format="mixed" — CRÍTICO
     df["timestamp"] = pd.to_datetime(
         df["timestamp"], utc=True, errors="coerce", format="mixed"
     )
