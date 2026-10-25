@@ -214,7 +214,7 @@ COOLDOWN_ACUM           = 12
 COOLDOWN_TCB_TOQUE      = 4
 COOLDOWN_TCB_CONFIRMADO = 12
 COOLDOWN_EUROPA         = 4
-
+COOLDOWN_RADAR          = 4   # 4 horas entre señales de la misma moneda
 
 # ============================================================
 # TELEGRAM
@@ -399,11 +399,10 @@ def inicio_movimiento_5m(df, symbol, ts_cierre_vela,
 # RADAR DE BALLENAS
 # ============================================================
 
-def escanear_radar(df):
+def escanear_radar(df, alertas_state):
     """
-    Revisa las monedas del radar en busca de señales de LONG y TECHO.
-    Detecta el toque del Fibo en velas de 4h (0.618 y 0.786).
-    Hace seguimiento en velas de 5m (2h) para confirmar el rebote.
+    Revisa las monedas del radar en busca de señales de LONG.
+    Aplica cooldown para no repetir la misma señal.
     """
     alertas = []
     
@@ -414,6 +413,10 @@ def escanear_radar(df):
     ahora = df["timestamp"].max()
     
     for sym in monedas_radar:
+        # Verificar cooldown
+        if not paso_cooldown(alertas_state, sym, "RADAR", COOLDOWN_RADAR):
+            continue
+        
         g = df[df["symbol"] == sym].sort_values("timestamp")
         if len(g) < 50: continue
         
@@ -475,10 +478,9 @@ def escanear_radar(df):
         if rebote < 1.0:
             continue
         
-        # Generar alerta según el nivel
+        # Generar alerta SOLO para LONG
         if tipo == "LONG":
             if en_618 and en_786:
-                # Toca ambos niveles (raro, pero posible)
                 alertas.append(
                     f"🔥🔥 *{sym}* — SEÑAL MUY FUERTE\n"
                     f"━━━━━━━━━━━━━━━━━━━\n"
@@ -488,8 +490,8 @@ def escanear_radar(df):
                     f"💰 Subida prom: +{subida_prom:.1f}%\n"
                     f"🎯 Tasa de acierto: {tasa}%"
                 )
+                registrar_alerta(alertas_state, sym, "RADAR")
             elif en_786:
-                # Toca 0.786 (soporte final, más fiable)
                 alertas.append(
                     f"✅ *{sym}* — SEÑAL FUERTE\n"
                     f"━━━━━━━━━━━━━━━━━━━\n"
@@ -499,8 +501,8 @@ def escanear_radar(df):
                     f"💰 Subida prom: +{subida_prom:.1f}%\n"
                     f"🎯 Tasa de acierto: {tasa}%"
                 )
+                registrar_alerta(alertas_state, sym, "RADAR")
             elif en_618:
-                # Toca 0.618 (alerta temprana, puede caer al 0.786)
                 alertas.append(
                     f"⚠️ *{sym}* — ALERTA TEMPRANA\n"
                     f"━━━━━━━━━━━━━━━━━━━\n"
@@ -511,6 +513,7 @@ def escanear_radar(df):
                     f"🎯 Tasa de acierto: {tasa}%\n"
                     f"⚠️ Stop-loss ajustado"
                 )
+                registrar_alerta(alertas_state, sym, "RADAR")
     
     return alertas
 
@@ -1295,9 +1298,12 @@ def main():
     if aviso_btc:
         print(f"   {aviso_btc}")
 
+    # Cargar alertas_state ANTES del radar
+    alertas_state = cargar_alertas_state()
+
     # === ESCANEAR RADAR DE BALLENAS ===
     print(f"\n📡 Escaneando Radar de Ballenas...")
-    radar_alertas = escanear_radar(df)
+    radar_alertas = escanear_radar(df, alertas_state)
     if radar_alertas:
         print("   🔥 Señales detectadas:")
         for a in radar_alertas:
@@ -1318,7 +1324,6 @@ def main():
             print(f"   📱 Alerta de cambio {a_real('xk1')} enviada")
     guardar_btc_estado(btc["estado"])
 
-    alertas_state = cargar_alertas_state()
     todas = df["symbol"].unique()
     print(f"\n🔍 Escaneando {len(todas)} monedas...")
 
@@ -1422,7 +1427,6 @@ def main():
         cd = not paso_cooldown(alertas_state, a["symbol"], "ACUM", COOLDOWN_ACUM)
         print(f"   {a_real(a['symbol'])} ({a['fase']}) - cooldown: {'SÍ' if cd else 'NO'}")
     # === FIN DEBUG ===
-
 
     print(f"\n   🎯 SUELOS:        {len(suelos)}")
     print(f"   🚨 FUERTES:       {len(fuertes)}")
