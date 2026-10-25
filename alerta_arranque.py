@@ -486,7 +486,7 @@ def escanear_radar(df, alertas_state):
                     f"━━━━━━━━━━━━━━━━━━━\n"
                     f"📊 Nivel: 0.618 y 0.786 (misma vela)\n"
                     f"📈 Rebote: +{rebote:.1f}% en 5m\n"
-                    f"⏳ LONG esperado en: {horas:.1f}h\n"
+                    f"⏳ LONG esperado en BTC: {horas:.1f}h\n"
                     f"💰 Subida prom: +{subida_prom:.1f}%\n"
                     f"🎯 Tasa de acierto: {tasa}%"
                 )
