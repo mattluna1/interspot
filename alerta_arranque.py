@@ -1313,6 +1313,7 @@ def main():
         msg_radar += "\n".join(radar_alertas)
         msg_radar += f"\n\n⚪ xk1: {btc['estado']}"
         enviar_telegram(msg_radar)
+        guardar_alertas_state(alertas_state)  # <-- AÑADIR ESTA LÍNEA
     else:
         print("   ⚪ Sin señales fuertes en el radar.")
     # ==========================================
