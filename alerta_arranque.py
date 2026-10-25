@@ -45,6 +45,26 @@ def _cargar_secretos():
 
 ALIAS_A_REAL, REAL_A_ALIAS = _cargar_secretos()
 
+# ============================================================
+# CARGA DEL RADAR (desde secreto de GitHub)
+# ============================================================
+
+def _cargar_radar_config():
+    raw = os.getenv("RADAR_CONFIG")
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception as e:
+            print(f"⚠️ Error al leer RADAR_CONFIG: {e}")
+    print("⚠️ RADAR_CONFIG no encontrado. Radar desactivado.")
+    return {
+        "radar_history_url": None,
+        "radar_suelos": {},
+        "radar_techos": {},
+        "radar_fuerza": {},
+    }
+
+RADAR_CONFIG = _cargar_radar_config()
 
 def a_alias(real):
     if not real:
@@ -242,6 +262,24 @@ def cargar_datos():
         except Exception as e:
             print(f"⚠️ {nombre}: {str(e)[:80]}")
 
+    # --- RADAR HISTORY (desde secreto) ---
+    radar_url = RADAR_CONFIG.get("radar_history_url")
+    if radar_url:
+        try:
+            r = requests.get(radar_url, timeout=30, headers={"Cache-Control": "no-cache"})
+            r.raise_for_status()
+            df = pd.read_csv(StringIO(r.text), low_memory=False)
+            df["_fuente"] = "radar_history"
+            if REAL_A_ALIAS and "symbol" in df.columns:
+                df["symbol"] = (
+                    df["symbol"].astype(str).str.strip().str.upper()
+                    .map(lambda s: a_alias(s))
+                )
+            dfs.append(df)
+            print(f"✅ radar_history: {len(df):,} filas")
+        except Exception as e:
+            print(f"⚠️ radar_history: {str(e)[:80]}")
+
     if not dfs:
         sys.exit("❌ No se pudo cargar ningún CSV")
 
@@ -355,6 +393,70 @@ def inicio_movimiento_5m(df, symbol, ts_cierre_vela,
         }
 
     return None
+
+
+# ============================================================
+# RADAR DE BALLENAS
+# ============================================================
+
+def escanear_radar(df):
+    """
+    Revisa las monedas del radar en busca de señales de LONG y TECHO.
+    Usa RADAR_CONFIG (secreto de GitHub) para las monedas y tiempos.
+    """
+    alertas = []
+    
+    if not RADAR_CONFIG.get("radar_suelos") and not RADAR_CONFIG.get("radar_techos"):
+        return alertas
+    
+    monedas_radar = df[df["_fuente"] == "radar_history"]["symbol"].unique()
+    
+    for sym in monedas_radar:
+        g = df[df["symbol"] == sym].sort_values("timestamp")
+        if len(g) < 50: continue
+        
+        g4 = g.copy()
+        g4["vela_4h"] = g4["timestamp"].dt.floor("4h")
+        velas = g4.groupby("vela_4h").agg(price=("price", "last")).reset_index()
+        
+        if len(velas) < 18: continue
+        
+        corte = velas["vela_4h"].max() - timedelta(hours=72)
+        rec = velas[velas["vela_4h"] >= corte]
+        if len(rec) < 10: continue
+        
+        p_min = rec["price"].min()
+        p_max = rec["price"].max()
+        rango = p_max - p_min
+        if rango <= 0: continue
+        
+        fibo_618 = p_max - rango * 0.618
+        fibo_786 = p_max - rango * 0.786
+        
+        p_actual = g.iloc[-1]["price"]
+        
+        en_618 = abs(p_actual - fibo_618) / fibo_618 * 100 <= 1.5
+        en_786 = abs(p_actual - fibo_786) / fibo_786 * 100 <= 1.5
+        
+        if not (en_618 or en_786):
+            continue
+        
+        nivel = "0.618" if en_618 else "0.786"
+        
+        post = g[g["timestamp"] > g.iloc[-1]["timestamp"] - timedelta(hours=2)]
+        if len(post) < 2: continue
+        
+        cambio = (post.iloc[-1]["price"] / post.iloc[0]["price"] - 1) * 100
+        
+        if sym in RADAR_CONFIG.get("radar_suelos", {}) and cambio > 1.0:
+            horas = RADAR_CONFIG["radar_suelos"][sym][0]
+            alertas.append(f"✅ {sym}: Tocó Fibo {nivel} en 4h y rebotó +{cambio:.1f}%. Posible LONG en BTC en {horas:.1f}h.")
+        
+        elif sym in RADAR_CONFIG.get("radar_techos", {}) and cambio < -1.0:
+            horas = RADAR_CONFIG.get("radar_techos", {})[sym][0]
+            alertas.append(f"⚠️ {sym}: Tocó Fibo {nivel} en 4h y cayó {cambio:.1f}%. Posible TECHO de BTC en {horas:.1f}h.")
+    
+    return alertas
 
 
 # ============================================================
@@ -1137,6 +1239,22 @@ def main():
     print(f"   {linea_btc}")
     if aviso_btc:
         print(f"   {aviso_btc}")
+
+    # === ESCANEAR RADAR DE BALLENAS ===
+    print(f"\n📡 Escaneando Radar de Ballenas...")
+    radar_alertas = escanear_radar(df)
+    if radar_alertas:
+        print("   🔥 Señales detectadas:")
+        for a in radar_alertas:
+            print(f"      {a}")
+        
+        msg_radar = "📡 *RADAR DE BALLENAS*\n━━━━━━━━━━━━━━━━━━━\n"
+        msg_radar += "\n".join(radar_alertas)
+        msg_radar += f"\n\n⚪ xk1: {btc['estado']}"
+        enviar_telegram(msg_radar)
+    else:
+        print("   ⚪ Sin señales fuertes en el radar.")
+    # ==========================================
 
     estado_previo = cargar_btc_estado_previo()
     if estado_previo and estado_previo != btc["estado"]:
