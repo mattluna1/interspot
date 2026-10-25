@@ -402,7 +402,8 @@ def inicio_movimiento_5m(df, symbol, ts_cierre_vela,
 def escanear_radar(df):
     """
     Revisa las monedas del radar en busca de señales de LONG y TECHO.
-    Usa RADAR_CONFIG (secreto de GitHub) para las monedas y tiempos.
+    Detecta el toque del Fibo en velas de 4h (0.618 y 0.786).
+    Hace seguimiento en velas de 5m (2h) para confirmar el rebote.
     """
     alertas = []
     
@@ -410,11 +411,13 @@ def escanear_radar(df):
         return alertas
     
     monedas_radar = df[df["_fuente"] == "radar_history"]["symbol"].unique()
+    ahora = df["timestamp"].max()
     
     for sym in monedas_radar:
         g = df[df["symbol"] == sym].sort_values("timestamp")
         if len(g) < 50: continue
         
+        # Calcular Fibonacci en 4h (últimas 72h)
         g4 = g.copy()
         g4["vela_4h"] = g4["timestamp"].dt.floor("4h")
         velas = g4.groupby("vela_4h").agg(price=("price", "last")).reset_index()
@@ -435,29 +438,84 @@ def escanear_radar(df):
         
         p_actual = g.iloc[-1]["price"]
         
+        # Ver si está en RADAR_SUELOS o RADAR_TECHOS
+        if sym in RADAR_CONFIG.get("radar_suelos", {}):
+            config = RADAR_CONFIG["radar_suelos"][sym]
+            subida_prom = config.get("subida_prom", 0)
+            tasa = config.get("tasa", 0)
+            horas = config.get("horas", 0)
+            tipo = "LONG"
+        elif sym in RADAR_CONFIG.get("radar_techos", {}):
+            config = RADAR_CONFIG["radar_techos"][sym]
+            subida_prom = 0
+            tasa = 0
+            horas = config.get("horas", 0)
+            tipo = "TECHO"
+        else:
+            continue
+        
+        # Ver si el precio actual está en 0.618 o 0.786
         en_618 = abs(p_actual - fibo_618) / fibo_618 * 100 <= 1.5
         en_786 = abs(p_actual - fibo_786) / fibo_786 * 100 <= 1.5
         
         if not (en_618 or en_786):
             continue
         
-        nivel = "0.618" if en_618 else "0.786"
+        # === SEGUIMIENTO EN VELAS DE 5m (2h) ===
+        corte_2h = ahora - timedelta(hours=2)
+        g_5m = g[g["timestamp"] >= corte_2h].set_index("timestamp")["price"].resample("5min").last().dropna()
         
-        post = g[g["timestamp"] > g.iloc[-1]["timestamp"] - timedelta(hours=2)]
-        if len(post) < 2: continue
+        if len(g_5m) < 6:
+            continue
         
-        cambio = (post.iloc[-1]["price"] / post.iloc[0]["price"] - 1) * 100
+        p_min_2h = g_5m.min()
+        p_max_2h = g_5m.max()
+        rebote = (p_max_2h - p_min_2h) / p_min_2h * 100 if p_min_2h > 0 else 0
         
-        if sym in RADAR_CONFIG.get("radar_suelos", {}) and cambio > 1.0:
-            horas = RADAR_CONFIG["radar_suelos"][sym][0]
-            alertas.append(f"✅ {sym}: Tocó Fibo {nivel} en 4h y rebotó +{cambio:.1f}%. Posible LONG en BTC en {horas:.1f}h.")
+        if rebote < 1.0:
+            continue
         
-        elif sym in RADAR_CONFIG.get("radar_techos", {}) and cambio < -1.0:
-            horas = RADAR_CONFIG.get("radar_techos", {})[sym][0]
-            alertas.append(f"⚠️ {sym}: Tocó Fibo {nivel} en 4h y cayó {cambio:.1f}%. Posible TECHO de BTC en {horas:.1f}h.")
+        # Generar alerta según el nivel
+        if tipo == "LONG":
+            if en_618 and en_786:
+                # Toca ambos niveles (raro, pero posible)
+                alertas.append(
+                    f"🔥🔥 {sym}: Tocó Fibo 0.618 y 0.786 en 4h y rebotó +{rebote:.1f}% en 5m. "
+                    f"SEÑAL MUY FUERTE. Posible LONG en BTC en {horas:.1f}h. "
+                    f"Subida promedio: +{subida_prom:.1f}% (tasa {tasa}%)."
+                )
+            elif en_786:
+                # Toca 0.786 (soporte final, más fiable)
+                alertas.append(
+                    f"✅ {sym}: Tocó Fibo 0.786 en 4h y rebotó +{rebote:.1f}% en 5m. "
+                    f"SEÑAL FUERTE (soporte final). Posible LONG en BTC en {horas:.1f}h. "
+                    f"Subida promedio: +{subida_prom:.1f}% (tasa {tasa}%)."
+                )
+            elif en_618:
+                # Toca 0.618 (alerta temprana, puede caer al 0.786)
+                alertas.append(
+                    f"⚠️ {sym}: Tocó Fibo 0.618 en 4h y rebotó +{rebote:.1f}% en 5m. "
+                    f"ALERTA TEMPRANA (puede caer al 0.786). Posible LONG en BTC en {horas:.1f}h. "
+                    f"Subida promedio: +{subida_prom:.1f}% (tasa {tasa}%). Usar stop-loss ajustado."
+                )
+        else:  # TECHO
+            if en_618 and en_786:
+                alertas.append(
+                    f"🔥🔥 {sym}: Tocó Fibo 0.618 y 0.786 en 4h y cayó -{rebote:.1f}% en 5m. "
+                    f"SEÑAL MUY FUERTE. Posible TECHO de BTC en {horas:.1f}h."
+                )
+            elif en_786:
+                alertas.append(
+                    f"✅ {sym}: Tocó Fibo 0.786 en 4h y cayó -{rebote:.1f}% en 5m. "
+                    f"SEÑAL FUERTE (soporte final). Posible TECHO de BTC en {horas:.1f}h."
+                )
+            elif en_618:
+                alertas.append(
+                    f"⚠️ {sym}: Tocó Fibo 0.618 en 4h y cayó -{rebote:.1f}% en 5m. "
+                    f"ALERTA TEMPRANA (puede caer al 0.786). Posible TECHO de BTC en {horas:.1f}h."
+                )
     
     return alertas
-
 
 # ============================================================
 # ANÁLISIS BTC — 6 ESTADOS (sin cambios)
