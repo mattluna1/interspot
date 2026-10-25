@@ -214,7 +214,7 @@ COOLDOWN_ACUM           = 12
 COOLDOWN_TCB_TOQUE      = 4
 COOLDOWN_TCB_CONFIRMADO = 12
 COOLDOWN_EUROPA         = 4
-COOLDOWN_          = 4   # 4 horas entre señales de la misma moneda
+COOLDOWN_RADAR     = 4   # 4 horas entre señales de la misma moneda
 
 # ============================================================
 # TELEGRAM
