@@ -425,11 +425,11 @@ def escanear_radar(df, alertas_state):
         g4["vela_4h"] = g4["timestamp"].dt.floor("4h")
         velas = g4.groupby("vela_4h").agg(price=("price", "last")).reset_index()
         
-        if len(velas) < 18: continue
+        if len(velas) < 48: continue  # Mínimo 8 días de velas 4h
         
-        corte = velas["vela_4h"].max() - timedelta(hours=72)
+        corte = velas["vela_4h"].max() - timedelta(hours=192)  # 8 días
         rec = velas[velas["vela_4h"] >= corte]
-        if len(rec) < 10: continue
+        if len(rec) < 40: continue  # Mínimo 40 velas para Fibonacci fiable
         
         p_min = rec["price"].min()
         p_max = rec["price"].max()
