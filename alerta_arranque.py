@@ -911,21 +911,22 @@ def detectar_tcb(df, symbol, btc_estado):
 
     ts_cierre_toque = ts_toque + timedelta(hours=4)
 
-    # === NUEVO: Filtro de rebote post-cierre ===
+    # === FILTRO DE REBOTE MEJORADO: medir desde el toque (no desde el cierre) ===
+    # Buscamos el rebote en las 2 horas posteriores al toque del Fibo
     precios_post = g[
-        (g["timestamp"] > ts_cierre_toque) &
-        (g["timestamp"] <= ts_cierre_toque + timedelta(minutes=30))
+        (g["timestamp"] > ts_toque) &
+        (g["timestamp"] <= ts_toque + timedelta(hours=2))
     ]
 
-    if len(precios_post) > 0:
-        p_max_post = float(precios_post["price"].max())
-        p_min_post = float(precios_post["price"].min())
-        mov_arriba = (p_max_post - p_toque) / p_toque * 100 if p_toque > 0 else 0
-        mov_abajo = (p_toque - p_min_post) / p_toque * 100 if p_toque > 0 else 0
+    if len(precios_post) == 0:
+        return None
 
-        if max(mov_arriba, mov_abajo) < TCB_REBOTE_MIN_PCT:
-            return None
-    else:
+    p_max_post = float(precios_post["price"].max())
+    p_min_post = float(precios_post["price"].min())
+    mov_arriba = (p_max_post - p_toque) / p_toque * 100 if p_toque > 0 else 0
+    mov_abajo = (p_toque - p_min_post) / p_toque * 100 if p_toque > 0 else 0
+
+    if max(mov_arriba, mov_abajo) < TCB_REBOTE_MIN_PCT:
         return None
     # === FIN filtro de rebote ===
 
