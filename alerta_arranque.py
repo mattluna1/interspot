@@ -480,39 +480,36 @@ def escanear_radar(df):
             if en_618 and en_786:
                 # Toca ambos niveles (raro, pero posible)
                 alertas.append(
-                    f"🔥🔥 {sym}: Tocó Fibo 0.618 y 0.786 en 4h y rebotó +{rebote:.1f}% en 5m. "
-                    f"SEÑAL MUY FUERTE. Posible LONG en BTC en {horas:.1f}h. "
-                    f"Subida promedio: +{subida_prom:.1f}% (tasa {tasa}%)."
+                    f"🔥🔥 *{sym}* — SEÑAL MUY FUERTE\n"
+                    f"━━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 Nivel: 0.618 y 0.786 (misma vela)\n"
+                    f"📈 Rebote: +{rebote:.1f}% en 5m\n"
+                    f"⏳ LONG esperado en: {horas:.1f}h\n"
+                    f"💰 Subida prom: +{subida_prom:.1f}%\n"
+                    f"🎯 Tasa de acierto: {tasa}%"
                 )
             elif en_786:
                 # Toca 0.786 (soporte final, más fiable)
                 alertas.append(
-                    f"✅ {sym}: Tocó Fibo 0.786 en 4h y rebotó +{rebote:.1f}% en 5m. "
-                    f"SEÑAL FUERTE (soporte final). Posible LONG en BTC en {horas:.1f}h. "
-                    f"Subida promedio: +{subida_prom:.1f}% (tasa {tasa}%)."
+                    f"✅ *{sym}* — SEÑAL FUERTE\n"
+                    f"━━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 Nivel: 0.786 (soporte final)\n"
+                    f"📈 Rebote: +{rebote:.1f}% en 5m\n"
+                    f"⏳ LONG esperado en: {horas:.1f}h\n"
+                    f"💰 Subida prom: +{subida_prom:.1f}%\n"
+                    f"🎯 Tasa de acierto: {tasa}%"
                 )
             elif en_618:
                 # Toca 0.618 (alerta temprana, puede caer al 0.786)
                 alertas.append(
-                    f"⚠️ {sym}: Tocó Fibo 0.618 en 4h y rebotó +{rebote:.1f}% en 5m. "
-                    f"ALERTA TEMPRANA (puede caer al 0.786). Posible LONG en BTC en {horas:.1f}h. "
-                    f"Subida promedio: +{subida_prom:.1f}% (tasa {tasa}%). Usar stop-loss ajustado."
-                )
-        else:  # TECHO
-            if en_618 and en_786:
-                alertas.append(
-                    f"🔥🔥 {sym}: Tocó Fibo 0.618 y 0.786 en 4h y cayó -{rebote:.1f}% en 5m. "
-                    f"SEÑAL MUY FUERTE. Posible TECHO de BTC en {horas:.1f}h."
-                )
-            elif en_786:
-                alertas.append(
-                    f"✅ {sym}: Tocó Fibo 0.786 en 4h y cayó -{rebote:.1f}% en 5m. "
-                    f"SEÑAL FUERTE (soporte final). Posible TECHO de BTC en {horas:.1f}h."
-                )
-            elif en_618:
-                alertas.append(
-                    f"⚠️ {sym}: Tocó Fibo 0.618 en 4h y cayó -{rebote:.1f}% en 5m. "
-                    f"ALERTA TEMPRANA (puede caer al 0.786). Posible TECHO de BTC en {horas:.1f}h."
+                    f"⚠️ *{sym}* — ALERTA TEMPRANA\n"
+                    f"━━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 Nivel: 0.618 (puede caer al 0.786)\n"
+                    f"📈 Rebote: +{rebote:.1f}% en 5m\n"
+                    f"⏳ LONG esperado en: {horas:.1f}h\n"
+                    f"💰 Subida prom: +{subida_prom:.1f}%\n"
+                    f"🎯 Tasa de acierto: {tasa}%\n"
+                    f"⚠️ Stop-loss ajustado"
                 )
     
     return alertas
