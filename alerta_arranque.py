@@ -214,7 +214,7 @@ COOLDOWN_ACUM           = 12
 COOLDOWN_TCB_TOQUE      = 4
 COOLDOWN_TCB_CONFIRMADO = 12
 COOLDOWN_EUROPA         = 4
-COOLDOWN_RADAR          = 4   # 4 horas entre señales de la misma moneda
+COOLDOWN_          = 4   # 4 horas entre señales de la misma moneda
 
 # ============================================================
 # TELEGRAM
@@ -262,7 +262,7 @@ def cargar_datos():
         except Exception as e:
             print(f"⚠️ {nombre}: {str(e)[:80]}")
 
-    # --- RADAR HISTORY (desde secreto) ---
+    # ---  HISTORY (desde secreto) ---
     radar_url = RADAR_CONFIG.get("radar_history_url")
     if radar_url:
         try:
@@ -385,15 +385,42 @@ def inicio_movimiento_5m(df, symbol, ts_cierre_vela,
             continue
 
         return {
-            "p_ult": p_ult,
-            "subidas": subidas,
-            "mov_ventana": mov_ventana,
-            "mov_desde_min": mov_desde_min,
-            "ts_ult": bloque.index[-1],
-        }
+        "p_ult": p_ult,
+        "subidas": subidas,
+        "mov_ventana": mov_ventana,
+        "mov_desde_min": mov_desde_min,
+        "ts_ult": bloque.index[-1],
+    }
 
     return None
 
+
+# ============================================================
+# VERIFICAR TENDENCIA EN 5m (para el radar)
+# ============================================================
+
+def verificar_tendencia_5m(df, symbol, ahora):
+    """
+    Verifica si hay un rebote real en velas de 5m.
+    Devuelve el % de rebote si supera el umbral, o None si no.
+    """
+    corte_2h = ahora - timedelta(hours=2)
+    g = df[df["symbol"] == symbol].sort_values("timestamp")
+    g_5m = g[g["timestamp"] >= corte_2h].set_index("timestamp")["price"].resample("5min").last().dropna()
+    
+    if len(g_5m) < 6:
+        return None
+    
+    # Calcular el rebote desde el mínimo en las últimas 2 horas
+    p_min = g_5m.min()
+    p_max = g_5m.max()
+    rebote = (p_max - p_min) / p_min * 100 if p_min > 0 else 0
+    
+    # Exigir un rebote mínimo (ahora 1.5% en lugar de 1.0%)
+    if rebote < 2.0:
+        return None
+    
+    return rebote
 
 # ============================================================
 # RADAR DE BALLENAS
