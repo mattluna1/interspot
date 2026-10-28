@@ -37,6 +37,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SECRETOS_JSON: ${{ secrets.SECRETOS_JSON }}
           RADAR_CONFIG: ${{ secrets.RADAR_CONFIG }} # <-- NUEVO
+          RECOLECTORES_URLS: ${{ secrets.RECOLECTORES_URLS }} # <-- ¿ESTÁ ESTA LÍNEA?
         run: python -u alerta_arranque.py
 
       - name: Commit state files
