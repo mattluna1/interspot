@@ -66,6 +66,23 @@ def _cargar_radar_config():
 
 RADAR_CONFIG = _cargar_radar_config()
 
+# ============================================================
+# CARGA DE URLS DE RECOLECTORES (desde secreto de GitHub)
+# ============================================================
+
+def _cargar_recolectores_urls():
+    raw = os.getenv("RECOLECTORES_URLS")
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception as e:
+            print(f"⚠️ Error al leer RECOLECTORES_URLS: {e}")
+    print("⚠️ RECOLECTORES_URLS no encontrado. No se cargarán datos.")
+    return {}
+
+RECOLECTORES_URLS = _cargar_recolectores_urls()
+
+
 def a_alias(real):
     if not real:
         return real
@@ -79,23 +96,11 @@ def a_real(alias):
 
 
 # ============================================================
-# URLs  [P3.2] refs/heads/main/ | [P3.3] sin 201_300
+# URLs (ELIMINADO: ahora se usa RECOLECTORES_URLS desde secreto)
 # ============================================================
 
-CSV_URLS = {
-    "top100": (
-        "https://raw.githubusercontent.com/mattluna3/inspector/"
-        "refs/heads/main/data/cmc/market_history_top100.csv"
-    ),
-    "emerging": (
-        "https://raw.githubusercontent.com/mattluna3/inspector/"
-        "refs/heads/main/data/cmc/market_history_emerging.csv"
-    ),
-    "201_300": (
-        "https://raw.githubusercontent.com/emerging2/inspector2/"
-        "refs/heads/main/data/cmc/market_history_201_300.csv"
-    ),
-}
+# CSV_URLS eliminado
+
 
 # [P3.4] stables y wrapped, incluyendo USDGO y USDf
 EXCLUIR = {
@@ -106,7 +111,6 @@ EXCLUIR = {
     "xkqyw", "xkqyx", "xkqyy", "xkqyz", "xkqy0", "xkqz1", "xkqz2",
     "usdgo", "usdf",
 }
-
 
 # ============================================================
 # UMBRALES — ARRANQUE
@@ -243,7 +247,9 @@ def enviar_telegram(msg):
 
 def cargar_datos():
     dfs = []
-    for nombre, url in CSV_URLS.items():
+
+    # Leer URLs desde el secreto RECOLECTORES_URLS
+    for nombre, url in RECOLECTORES_URLS.items():
         try:
             r = requests.get(url, timeout=30, headers={
                 "Cache-Control": "no-cache",
@@ -262,7 +268,7 @@ def cargar_datos():
         except Exception as e:
             print(f"⚠️ {nombre}: {str(e)[:80]}")
 
-    # ---  HISTORY (desde secreto) ---
+    # --- RADAR HISTORY (desde secreto RADAR_CONFIG) ---
     radar_url = RADAR_CONFIG.get("radar_history_url")
     if radar_url:
         try:
@@ -284,7 +290,6 @@ def cargar_datos():
         sys.exit("❌ No se pudo cargar ningún CSV")
 
     df = pd.concat(dfs, ignore_index=True)
-    # [P3.1] format="mixed" — CRÍTICO
     df["timestamp"] = pd.to_datetime(
         df["timestamp"], utc=True, errors="coerce", format="mixed"
     )
