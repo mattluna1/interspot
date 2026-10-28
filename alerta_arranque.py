@@ -1156,7 +1156,7 @@ def enviar_alerta_suelo(a, btc):
     linea_btc, aviso_btc = _contexto_btc(btc)
     msg = (
         f"🎯 SUELO DETECTADO\n"
-        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
+        f"🪙 {a_real(a['symbol'])}\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"📉 Caída 24h: {a['cambio_24h']:+.2f}%\n"
         f"📊 Frenado 4h: {a['cambio_4h']:+.2f}%\n"
@@ -1186,7 +1186,7 @@ def enviar_alerta_arranque(a, btc):
     linea_btc, aviso_btc = _contexto_btc(btc)
     msg = (
         f"{emoji} {titulo}\n"
-        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
+        f"🪙 {a_real(a['symbol'])}\n"
         f"📈 +{a['cambio_1h']:.2f}% en 1h\n"
         f"📊 4h: {a['cambio_4h']:+.2f}% | 24h: {a['cambio_24h']:+.2f}%\n"
         f"💰 ${a['precio']:.6f}\n"
@@ -1207,7 +1207,7 @@ def enviar_alerta_reentrada(a, btc):
     linea_btc, aviso_btc = _contexto_btc(btc)
     msg = (
         f"📐 REENTRADA FIBO\n"
-        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
+        f"🪙 {a_real(a['symbol'])}\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"📊 Pump previo 48h: +{a['pump_total']:.1f}%\n"
         f"   Máx: ${a['p_max']:.6f}\n"
@@ -1237,7 +1237,7 @@ def enviar_alerta_acumulacion(a, btc):
     linea_btc, aviso_btc = _contexto_btc(btc)
     msg = (
         f"🚀 ACUMULACIÓN DETECTADA\n"
-        f"🪙 {a_real(a['symbol'])} (rank {a['rank']})\n"
+        f"🪙 {a_real(a['symbol'])}\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"📊 Rango: {a['rango_pct']:.1f}%\n"
         f"🎯 Posición: {a['pos_rango']:.0f}% del rango\n"
@@ -1278,7 +1278,7 @@ def enviar_alerta_tcb(a, btc):
 
     msg = (
         f"✅ TCB CONFIRMADO — {a_real(a['symbol'])}\n"
-        f"🪙 {a_real(a['symbol'])} (rank {a['cmc_rank']})\n"
+        f"🪙 {a_real(a['symbol'])}\n"
         f"📅 {emoji_ventana} ({a['hora_utc']:02d}:00 UTC)\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"📊 Rally previo: +{a['rango_pct']:.1f}%\n"
