@@ -325,42 +325,195 @@ def cargar_datos():
 # ============================================================
 
 # ============================================================
-# ESCANEAR FIBONACCI (niveles del secreto)
+# ESCANEAR FIBONACCI (niveles del secreto) — TOQUE + CONFIRMACIÓN LONG
 # ============================================================
+
+def _velas_5m_fibo(df, symbol, ts_desde, ts_hasta):
+    """OHLC 5m entre dos timestamps. Devuelve None si no hay datos."""
+    g = df[(df["symbol"] == symbol) &
+           (df["timestamp"] >= ts_desde) &
+           (df["timestamp"] <= ts_hasta)].sort_values("timestamp")
+    if len(g) == 0:
+        return None
+    v = (g.set_index("timestamp")["price"]
+         .resample("5min")
+         .agg(["first", "max", "min", "last"])
+         .dropna())
+    v.columns = ["open", "high", "low", "close"]
+    return v
+
+
+def _detectar_toque_fibo(df, symbol, nivel_valor):
+    """
+    Devuelve dict si el precio está TOCANDO el nivel AHORA (±1.5%),
+    o None si no.
+    """
+    FIBO_TOLERANCIA_TOQUE = 1.5
+
+    g = df[df["symbol"] == symbol].sort_values("timestamp")
+    if len(g) < 20:
+        return None
+
+    ts_max = g["timestamp"].max()
+    if not es_fresco(ts_max):
+        return None
+
+    p_actual = float(g.iloc[-1]["price"])
+    if nivel_valor <= 0 or p_actual <= 0:
+        return None
+
+    dist_actual = (p_actual - nivel_valor) / nivel_valor * 100
+    if abs(dist_actual) > FIBO_TOLERANCIA_TOQUE:
+        return None
+
+    corte_2h = ts_max - timedelta(hours=2)
+    rec_2h = g[g["timestamp"] >= corte_2h]
+    p_max_2h = float(rec_2h["price"].max()) if len(rec_2h) else p_actual
+    viene_de_arriba = p_max_2h > nivel_valor * 1.005
+
+    return {
+        "symbol": symbol,
+        "estado": "TOQUE",
+        "nivel_valor": nivel_valor,
+        "precio": p_actual,
+        "distancia": abs(dist_actual),
+        "dist_actual_pct": dist_actual,
+        "viene_de_arriba": viene_de_arriba,
+        "ts_toque": ts_max,
+    }
+
+
+def _confirmar_long_en_nivel_fibo(df, symbol, nivel_valor):
+    """
+    Devuelve dict con la confirmación LONG si el nivel fue respetado,
+    o None si no hay confirmación.
+    """
+    FIBO_TOLERANCIA_TOQUE   = 1.5
+    FIBO_VENTANA_TOQUE_H    = 4
+    FIBO_REBOTE_MIN_CONF    = 1.5
+    FIBO_CIERRE_TOL         = 0.5
+    FIBO_MAX_CIERRES_BAJOS  = 0.30
+    FIBO_VELAS_CONSECUTIVAS = 2
+
+    g = df[df["symbol"] == symbol].sort_values("timestamp")
+    if len(g) < 40:
+        return None
+
+    ts_max = g["timestamp"].max()
+    if not es_fresco(ts_max):
+        return None
+
+    p_actual = float(g.iloc[-1]["price"])
+    if nivel_valor <= 0 or p_actual <= 0:
+        return None
+
+    corte = ts_max - timedelta(hours=FIBO_VENTANA_TOQUE_H)
+    rec = g[g["timestamp"] >= corte]
+    if len(rec) < 6:
+        return None
+
+    p_min_ventana = float(rec["price"].min())
+    dist_toque = abs(p_min_ventana - nivel_valor) / nivel_valor * 100
+    if dist_toque > FIBO_TOLERANCIA_TOQUE:
+        return None
+
+    ts_toque = rec.loc[rec["price"].idxmin(), "timestamp"]
+
+    rebote_pct = (p_actual - nivel_valor) / nivel_valor * 100
+    if rebote_pct < FIBO_REBOTE_MIN_CONF:
+        return None
+
+    velas = _velas_5m_fibo(df, symbol,
+                           ts_toque - timedelta(minutes=10),
+                           ts_max)
+    if velas is None or len(velas) < FIBO_VELAS_CONSECUTIVAS + 2:
+        return None
+
+    umbral_bajo = nivel_valor * (1 - FIBO_CIERRE_TOL / 100)
+    if int((velas["close"] < umbral_bajo).sum()) > 0:
+        return None
+
+    velas_bajo_nivel = int((velas["close"] < nivel_valor).sum())
+    if velas_bajo_nivel / len(velas) > FIBO_MAX_CIERRES_BAJOS:
+        return None
+
+    cierres_sobre = (velas["close"] > nivel_valor).astype(int)
+    max_consec = 0
+    actual = 0
+    for v in cierres_sobre:
+        if v == 1:
+            actual += 1
+            max_consec = max(max_consec, actual)
+        else:
+            actual = 0
+    if max_consec < FIBO_VELAS_CONSECUTIVAS:
+        return None
+
+    p_max_post = float(velas["high"].max())
+    rebote_max = (p_max_post - nivel_valor) / nivel_valor * 100
+
+    return {
+        "symbol": symbol,
+        "estado": "LONG_CONFIRMADO",
+        "nivel_valor": nivel_valor,
+        "precio": p_actual,
+        "rebote_pct": rebote_pct,
+        "rebote_max_pct": rebote_max,
+        "p_min_ventana": p_min_ventana,
+        "dist_toque_pct": dist_toque,
+        "distancia": dist_toque,
+        "velas_5m_total": len(velas),
+        "velas_bajo_nivel": velas_bajo_nivel,
+        "velas_consecutivas_ok": max_consec,
+        "ts_toque": ts_toque,
+    }
+
 
 def escanear_fibo(df, alertas_state):
     """
-    Escanea las monedas en busca de precios cerca de los niveles de Fibonacci
-    (0.618 y 0.786) usando los datos del secreto FIBO_NIVELES.
+    Devuelve (toques, confirmaciones).
+      - toques:          lista de dicts con estado "TOQUE"
+      - confirmaciones:  lista de dicts con estado "LONG_CONFIRMADO"
+    Cada uno con cooldown independiente.
     """
-    alertas = []
-    TOLERANCIA = 2.0
-    COOLDOWN_FIBO = 6
-    
+    COOLDOWN_FIBO_TOQUE = 3
+    COOLDOWN_FIBO_CONF  = 8
+
+    toques = []
+    confirmaciones = []
+
     if not FIBO_NIVELES:
-        return alertas
-    
+        return toques, confirmaciones
+
     for sym, niveles in FIBO_NIVELES.items():
-        if not paso_cooldown(alertas_state, sym, "FIBO", COOLDOWN_FIBO):
+        if sym not in df["symbol"].values:
             continue
-        
-        g = df[df["symbol"] == sym].sort_values("timestamp")
-        if len(g) == 0:
-            continue
-        
-        p_actual = g.iloc[-1]["price"]
-        
-        dist_618 = abs(p_actual - niveles["fibo_618"]) / niveles["fibo_618"] * 100 if niveles["fibo_618"] > 0 else 999
-        dist_786 = abs(p_actual - niveles["fibo_786"]) / niveles["fibo_786"] * 100 if niveles["fibo_786"] > 0 else 999
-        
-        if dist_618 <= TOLERANCIA:
-            alertas.append({"symbol": sym, "nivel": "0.618", "precio": p_actual, "nivel_valor": niveles["fibo_618"], "distancia": dist_618})
-            registrar_alerta(alertas_state, sym, "FIBO")
-        elif dist_786 <= TOLERANCIA:
-            alertas.append({"symbol": sym, "nivel": "0.786", "precio": p_actual, "nivel_valor": niveles["fibo_786"], "distancia": dist_786})
-            registrar_alerta(alertas_state, sym, "FIBO")
-    
-    return alertas
+
+        for nombre, valor in (("0.618", niveles.get("fibo_618")),
+                              ("0.786", niveles.get("fibo_786"))):
+            if not valor or valor <= 0:
+                continue
+
+            cd_conf = f"FIBO_CONF_{nombre}"
+            if paso_cooldown(alertas_state, sym, cd_conf, COOLDOWN_FIBO_CONF):
+                conf = _confirmar_long_en_nivel_fibo(df, sym, valor)
+                if conf is not None:
+                    conf["nivel"] = nombre
+                    confirmaciones.append(conf)
+                    registrar_alerta(alertas_state, sym, cd_conf)
+                    continue
+
+            cd_toque = f"FIBO_TOQUE_{nombre}"
+            if paso_cooldown(alertas_state, sym, cd_toque, COOLDOWN_FIBO_TOQUE):
+                toque = _detectar_toque_fibo(df, sym, valor)
+                if toque is not None:
+                    toque["nivel"] = nombre
+                    toques.append(toque)
+                    registrar_alerta(alertas_state, sym, cd_toque)
+
+    return toques, confirmaciones
+
+
 def es_fresco(ts_max, minutos=60):
     ahora = datetime.now(timezone.utc)
     if ts_max.tzinfo is None:
@@ -417,7 +570,6 @@ def inicio_movimiento_5m(df, symbol, ts_cierre_vela,
 
     p_min_rango = float(p5.min())
 
-    # Ventana deslizante de n_velas
     for i in range(len(p5) - n_velas):
         bloque = p5.iloc[i:i + n_velas + 1]
         if len(bloque) < n_velas + 1:
@@ -442,12 +594,12 @@ def inicio_movimiento_5m(df, symbol, ts_cierre_vela,
             continue
 
         return {
-        "p_ult": p_ult,
-        "subidas": subidas,
-        "mov_ventana": mov_ventana,
-        "mov_desde_min": mov_desde_min,
-        "ts_ult": bloque.index[-1],
-    }
+            "p_ult": p_ult,
+            "subidas": subidas,
+            "mov_ventana": mov_ventana,
+            "mov_desde_min": mov_desde_min,
+            "ts_ult": bloque.index[-1],
+        }
 
     return None
 
