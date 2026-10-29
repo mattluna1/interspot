@@ -1392,37 +1392,70 @@ def main():
         print("   🔥 Señales detectadas:")
         for a in radar_alertas:
             print(f"      {a}")
-        
+
         msg_radar = "📡 *RADAR DE BALLENAS*\n━━━━━━━━━━━━━━━━━━━\n"
         msg_radar += "\n".join(radar_alertas)
         msg_radar += f"\n\n⚪ xk1: {btc['estado']}"
         enviar_telegram(msg_radar)
-        guardar_alertas_state(alertas_state)  # <-- AÑADIR ESTA LÍNEA
+        guardar_alertas_state(alertas_state)
     else:
         print("   ⚪ Sin señales fuertes en el radar.")
     # ==========================================
-  
-    # === ESCANEAR FIBONACCI ===
+
+    # === ESCANEAR FIBONACCI (toque + confirmación LONG) ===
     print(f"\n📡 Escaneando Fibonacci...")
-    fibo_alertas = escanear_fibo(df, alertas_state)
-    if fibo_alertas:
-        print(f"   🔥 {len(fibo_alertas)} monedas en zona de Fibonacci:")
-        for a in fibo_alertas:
-            print(f"      {a['symbol']} — {a['nivel']} (distancia: {a['distancia']:.2f}%)")
-        
-        msg_fibo = "📊 *MONEDAS EN ZONA DE FIBONACCI*\n"
-        msg_fibo += "━━━━━━━━━━━━━━━━━━━\n"
-        for a in fibo_alertas:
+    fibo_toques, fibo_confs = escanear_fibo(df, alertas_state)
+
+    # --- Mensaje 1: TOQUES ---
+    if fibo_toques:
+        print(f"   🎯 {len(fibo_toques)} toques de nivel Fibo:")
+        for a in fibo_toques:
+            print(f"      {a['symbol']} — {a['nivel']} "
+                  f"(dist {a['distancia']:.2f}%)")
+
+        msg_toque = "🎯 *FIBONACCI — TOQUE DE NIVEL*\n"
+        msg_toque += "━━━━━━━━━━━━━━━━━━━\n"
+        for a in fibo_toques:
             emoji = "🟢" if a["nivel"] == "0.786" else "🟡"
-            msg_fibo += f"{emoji} *{a_real(a['symbol'])}* — {a['nivel']}\n"
-            msg_fibo += f"   Precio: ${a['precio']:.6f}\n"
-            msg_fibo += f"   Nivel {a['nivel']}: ${a['nivel_valor']:.6f}\n"
-            msg_fibo += f"   Distancia: {a['distancia']:.2f}%\n\n"
-        msg_fibo += f"⚪ xk1: {btc['estado']}"
-        enviar_telegram(msg_fibo)
+            origen = "⬇️ desde arriba" if a.get("viene_de_arriba") else "⬆️ desde abajo"
+            msg_toque += f"{emoji} *{a_real(a['symbol'])}* — Fibo {a['nivel']}\n"
+            msg_toque += f"   Precio: ${a['precio']:.6f}\n"
+            msg_toque += f"   Nivel:  ${a['nivel_valor']:.6f}\n"
+            msg_toque += f"   Distancia: {a['distancia']:.2f}% {origen}\n\n"
+        msg_toque += "⏳ Esperando confirmación de respeto..."
+        msg_toque += f"\n⚪ xk1: {btc['estado']}"
+        enviar_telegram(msg_toque)
         guardar_alertas_state(alertas_state)
     else:
-        print("   ⚪ Sin monedas en zona de Fibonacci.")
+        print("   ⚪ Sin toques de Fibonacci.")
+
+    # --- Mensaje 2: CONFIRMACIONES LONG ---
+    if fibo_confs:
+        print(f"   ✅ {len(fibo_confs)} confirmaciones LONG:")
+        for a in fibo_confs:
+            print(f"      {a['symbol']} — {a['nivel']} "
+                  f"rebote +{a['rebote_pct']:.2f}%")
+
+        msg_conf = "✅ *FIBONACCI — CONFIRMACIÓN LONG*\n"
+        msg_conf += "━━━━━━━━━━━━━━━━━━━\n"
+        for a in fibo_confs:
+            emoji = "🟢" if a["nivel"] == "0.786" else "🟡"
+            hora_toque = (a["ts_toque"] - timedelta(hours=5)).strftime("%H:%M")
+            msg_conf += f"{emoji} *{a_real(a['symbol'])}* — Fibo {a['nivel']}\n"
+            msg_conf += f"   Precio: ${a['precio']:.6f}\n"
+            msg_conf += f"   Nivel:  ${a['nivel_valor']:.6f}\n"
+            msg_conf += f"   Rebote: +{a['rebote_pct']:.2f}% (máx +{a['rebote_max_pct']:.2f}%)\n"
+            msg_conf += f"   Velas OK: {a['velas_consecutivas_ok']} consecutivas "
+            msg_conf += f"(bajo nivel: {a['velas_bajo_nivel']}/{a['velas_5m_total']})\n"
+            msg_conf += f"   Toque: {hora_toque} Lima\n\n"
+        msg_conf += "🚀 *Entrada LONG confirmada*"
+        msg_conf += f"\n⚪ xk1: {btc['estado']}"
+        enviar_telegram(msg_conf)
+        guardar_alertas_state(alertas_state)
+    else:
+        print("   ⚪ Sin confirmaciones LONG en Fibonacci.")
+
+    # === CAMBIO DE ESTADO BTC (fuera del else, siempre se evalúa) ===
     estado_previo = cargar_btc_estado_previo()
     if estado_previo and estado_previo != btc["estado"]:
         print(f"\n🔄 Cambio {a_real('xk1')}: {estado_previo} → {btc['estado']}")
