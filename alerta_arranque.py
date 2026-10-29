@@ -65,6 +65,21 @@ def _cargar_radar_config():
     }
 
 RADAR_CONFIG = _cargar_radar_config()
+# ============================================================
+# CARGA DE NIVELES DE FIBONACCI (desde secreto)
+# ============================================================
+
+def _cargar_fibo_niveles():
+    raw = os.getenv("FIBO_NIVELES")
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception as e:
+            print(f"⚠️ Error al leer FIBO_NIVELES: {e}")
+    print("⚠️ FIBO_NIVELES no encontrado. Fibonacci desactivado.")
+    return {}
+
+FIBO_NIVELES = _cargar_fibo_niveles()
 
 # ============================================================
 # CARGA DE URLS DE RECOLECTORES (desde secreto de GitHub)
@@ -308,7 +323,43 @@ def cargar_datos():
 # ============================================================
 # HELPERS
 # ============================================================
+# ============================================================
+# ESCANEAR FIBONACCI (niveles del secreto)
+# ============================================================
 
+def escanear_fibo(df, alertas_state):
+    """
+    Escanea las monedas en busca de precios cerca de los niveles de Fibonacci
+    (0.618 y 0.786) usando los datos del secreto FIBO_NIVELES.
+    """
+    alertas = []
+    TOLERANCIA = 2.0
+    COOLDOWN_FIBO = 6
+    
+    if not FIBO_NIVELES:
+        return alertas
+    
+    for sym, niveles in FIBO_NIVELES.items():
+        if not paso_cooldown(alertas_state, sym, "FIBO", COOLDOWN_FIBO):
+            continue
+        
+        g = df[df["symbol"] == sym].sort_values("timestamp")
+        if len(g) == 0:
+            continue
+        
+        p_actual = g.iloc[-1]["price"]
+        
+        dist_618 = abs(p_actual - niveles["fibo_618"]) / niveles["fibo_618"] * 100 if niveles["fibo_618"] > 0 else 999
+        dist_786 = abs(p_actual - niveles["fibo_786"]) / niveles["fibo_786"] * 100 if niveles["fibo_786"] > 0 else 999
+        
+        if dist_618 <= TOLERANCIA:
+            alertas.append({"symbol": sym, "nivel": "0.618", "precio": p_actual, "nivel_valor": niveles["fibo_618"], "distancia": dist_618})
+            registrar_alerta(alertas_state, sym, "FIBO")
+        elif dist_786 <= TOLERANCIA:
+            alertas.append({"symbol": sym, "nivel": "0.786", "precio": p_actual, "nivel_valor": niveles["fibo_786"], "distancia": dist_786})
+            registrar_alerta(alertas_state, sym, "FIBO")
+    
+    return alertas
 def es_fresco(ts_max, minutos=60):
     ahora = datetime.now(timezone.utc)
     if ts_max.tzinfo is None:
@@ -1349,7 +1400,28 @@ def main():
     else:
         print("   ⚪ Sin señales fuertes en el radar.")
     # ==========================================
-
+  
+    # === ESCANEAR FIBONACCI ===
+    print(f"\n📡 Escaneando Fibonacci...")
+    fibo_alertas = escanear_fibo(df, alertas_state)
+    if fibo_alertas:
+        print(f"   🔥 {len(fibo_alertas)} monedas en zona de Fibonacci:")
+        for a in fibo_alertas:
+            print(f"      {a['symbol']} — {a['nivel']} (distancia: {a['distancia']:.2f}%)")
+        
+        msg_fibo = "📊 *MONEDAS EN ZONA DE FIBONACCI*\n"
+        msg_fibo += "━━━━━━━━━━━━━━━━━━━\n"
+        for a in fibo_alertas:
+            emoji = "🟢" if a["nivel"] == "0.786" else "🟡"
+            msg_fibo += f"{emoji} *{a_real(a['symbol'])}* — {a['nivel']}\n"
+            msg_fibo += f"   Precio: ${a['precio']:.6f}\n"
+            msg_fibo += f"   Nivel {a['nivel']}: ${a['nivel_valor']:.6f}\n"
+            msg_fibo += f"   Distancia: {a['distancia']:.2f}%\n\n"
+        msg_fibo += f"⚪ xk1: {btc['estado']}"
+        enviar_telegram(msg_fibo)
+        guardar_alertas_state(alertas_state)
+    else:
+        print("   ⚪ Sin monedas en zona de Fibonacci.")
     estado_previo = cargar_btc_estado_previo()
     if estado_previo and estado_previo != btc["estado"]:
         print(f"\n🔄 Cambio {a_real('xk1')}: {estado_previo} → {btc['estado']}")
