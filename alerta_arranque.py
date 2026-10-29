@@ -329,7 +329,6 @@ def cargar_datos():
 # ============================================================
 
 def _velas_5m_fibo(df, symbol, ts_desde, ts_hasta):
-    """OHLC 5m entre dos timestamps. Devuelve None si no hay datos."""
     g = df[(df["symbol"] == symbol) &
            (df["timestamp"] >= ts_desde) &
            (df["timestamp"] <= ts_hasta)].sort_values("timestamp")
@@ -344,123 +343,95 @@ def _velas_5m_fibo(df, symbol, ts_desde, ts_hasta):
 
 
 def _detectar_toque_fibo(df, symbol, nivel_valor):
-    """
-    Devuelve dict si el precio está TOCANDO el nivel AHORA (±1.5%),
-    o None si no.
-    """
-    FIBO_TOLERANCIA_TOQUE = 1.5
-
+    TOL = 1.5
     g = df[df["symbol"] == symbol].sort_values("timestamp")
     if len(g) < 20:
         return None
-
     ts_max = g["timestamp"].max()
     if not es_fresco(ts_max):
         return None
-
     p_actual = float(g.iloc[-1]["price"])
     if nivel_valor <= 0 or p_actual <= 0:
         return None
-
-    dist_actual = (p_actual - nivel_valor) / nivel_valor * 100
-    if abs(dist_actual) > FIBO_TOLERANCIA_TOQUE:
+    dist = (p_actual - nivel_valor) / nivel_valor * 100
+    if abs(dist) > TOL:
         return None
-
     corte_2h = ts_max - timedelta(hours=2)
     rec_2h = g[g["timestamp"] >= corte_2h]
     p_max_2h = float(rec_2h["price"].max()) if len(rec_2h) else p_actual
     viene_de_arriba = p_max_2h > nivel_valor * 1.005
-
     return {
-        "symbol": symbol,
-        "estado": "TOQUE",
-        "nivel_valor": nivel_valor,
-        "precio": p_actual,
-        "distancia": abs(dist_actual),
-        "dist_actual_pct": dist_actual,
+        "symbol": symbol, "estado": "TOQUE",
+        "nivel_valor": nivel_valor, "precio": p_actual,
+        "distancia": abs(dist),
         "viene_de_arriba": viene_de_arriba,
         "ts_toque": ts_max,
     }
 
 
 def _confirmar_long_en_nivel_fibo(df, symbol, nivel_valor):
-    """
-    Devuelve dict con la confirmación LONG si el nivel fue respetado,
-    o None si no hay confirmación.
-    """
-    FIBO_TOLERANCIA_TOQUE   = 1.5
-    FIBO_VENTANA_TOQUE_H    = 4
-    FIBO_REBOTE_MIN_CONF    = 1.5
-    FIBO_CIERRE_TOL         = 0.5
-    FIBO_MAX_CIERRES_BAJOS  = 0.30
-    FIBO_VELAS_CONSECUTIVAS = 2
+    TOL_TOQUE   = 1.5
+    VENTANA_H   = 4
+    REBOTE_MIN  = 1.5
+    CIERRE_TOL  = 0.5
+    MAX_CIERRES = 0.30
+    N_CONSEC    = 2
 
     g = df[df["symbol"] == symbol].sort_values("timestamp")
     if len(g) < 40:
         return None
-
     ts_max = g["timestamp"].max()
     if not es_fresco(ts_max):
         return None
-
     p_actual = float(g.iloc[-1]["price"])
     if nivel_valor <= 0 or p_actual <= 0:
         return None
 
-    corte = ts_max - timedelta(hours=FIBO_VENTANA_TOQUE_H)
+    corte = ts_max - timedelta(hours=VENTANA_H)
     rec = g[g["timestamp"] >= corte]
     if len(rec) < 6:
         return None
-
     p_min_ventana = float(rec["price"].min())
     dist_toque = abs(p_min_ventana - nivel_valor) / nivel_valor * 100
-    if dist_toque > FIBO_TOLERANCIA_TOQUE:
+    if dist_toque > TOL_TOQUE:
         return None
-
     ts_toque = rec.loc[rec["price"].idxmin(), "timestamp"]
 
     rebote_pct = (p_actual - nivel_valor) / nivel_valor * 100
-    if rebote_pct < FIBO_REBOTE_MIN_CONF:
+    if rebote_pct < REBOTE_MIN:
         return None
 
-    velas = _velas_5m_fibo(df, symbol,
-                           ts_toque - timedelta(minutes=10),
-                           ts_max)
-    if velas is None or len(velas) < FIBO_VELAS_CONSECUTIVAS + 2:
+    velas = _velas_5m_fibo(df, symbol, ts_toque - timedelta(minutes=10), ts_max)
+    if velas is None or len(velas) < N_CONSEC + 2:
         return None
 
-    umbral_bajo = nivel_valor * (1 - FIBO_CIERRE_TOL / 100)
+    umbral_bajo = nivel_valor * (1 - CIERRE_TOL / 100)
     if int((velas["close"] < umbral_bajo).sum()) > 0:
         return None
 
     velas_bajo_nivel = int((velas["close"] < nivel_valor).sum())
-    if velas_bajo_nivel / len(velas) > FIBO_MAX_CIERRES_BAJOS:
+    if velas_bajo_nivel / len(velas) > MAX_CIERRES:
         return None
 
     cierres_sobre = (velas["close"] > nivel_valor).astype(int)
-    max_consec = 0
-    actual = 0
+    max_consec, actual = 0, 0
     for v in cierres_sobre:
         if v == 1:
             actual += 1
             max_consec = max(max_consec, actual)
         else:
             actual = 0
-    if max_consec < FIBO_VELAS_CONSECUTIVAS:
+    if max_consec < N_CONSEC:
         return None
 
     p_max_post = float(velas["high"].max())
     rebote_max = (p_max_post - nivel_valor) / nivel_valor * 100
 
     return {
-        "symbol": symbol,
-        "estado": "LONG_CONFIRMADO",
-        "nivel_valor": nivel_valor,
-        "precio": p_actual,
-        "rebote_pct": rebote_pct,
-        "rebote_max_pct": rebote_max,
-        "p_min_ventana": p_min_ventana,
-        "dist_toque_pct": dist_toque,
+        "symbol": symbol, "estado": "LONG_CONFIRMADO",
+        "nivel_valor": nivel_valor, "precio": p_actual,
+        "rebote_pct": rebote_pct, "rebote_max_pct": rebote_max,
+        "p_min_ventana": p_min_ventana, "dist_toque_pct": dist_toque,
         "distancia": dist_toque,
         "velas_5m_total": len(velas),
         "velas_bajo_nivel": velas_bajo_nivel,
@@ -472,30 +443,23 @@ def _confirmar_long_en_nivel_fibo(df, symbol, nivel_valor):
 def escanear_fibo(df, alertas_state):
     """
     Devuelve (toques, confirmaciones).
-      - toques:          lista de dicts con estado "TOQUE"
-      - confirmaciones:  lista de dicts con estado "LONG_CONFIRMADO"
-    Cada uno con cooldown independiente.
     """
-    COOLDOWN_FIBO_TOQUE = 3
-    COOLDOWN_FIBO_CONF  = 8
-
-    toques = []
-    confirmaciones = []
-
+    COOLDOWN_TOQUE = 3
+    COOLDOWN_CONF  = 8
+    toques, confirmaciones = [], []
     if not FIBO_NIVELES:
         return toques, confirmaciones
 
     for sym, niveles in FIBO_NIVELES.items():
         if sym not in df["symbol"].values:
             continue
-
         for nombre, valor in (("0.618", niveles.get("fibo_618")),
                               ("0.786", niveles.get("fibo_786"))):
             if not valor or valor <= 0:
                 continue
 
             cd_conf = f"FIBO_CONF_{nombre}"
-            if paso_cooldown(alertas_state, sym, cd_conf, COOLDOWN_FIBO_CONF):
+            if paso_cooldown(alertas_state, sym, cd_conf, COOLDOWN_CONF):
                 conf = _confirmar_long_en_nivel_fibo(df, sym, valor)
                 if conf is not None:
                     conf["nivel"] = nombre
@@ -504,7 +468,7 @@ def escanear_fibo(df, alertas_state):
                     continue
 
             cd_toque = f"FIBO_TOQUE_{nombre}"
-            if paso_cooldown(alertas_state, sym, cd_toque, COOLDOWN_FIBO_TOQUE):
+            if paso_cooldown(alertas_state, sym, cd_toque, COOLDOWN_TOQUE):
                 toque = _detectar_toque_fibo(df, sym, valor)
                 if toque is not None:
                     toque["nivel"] = nombre
@@ -570,6 +534,7 @@ def inicio_movimiento_5m(df, symbol, ts_cierre_vela,
 
     p_min_rango = float(p5.min())
 
+    # Ventana deslizante de n_velas
     for i in range(len(p5) - n_velas):
         bloque = p5.iloc[i:i + n_velas + 1]
         if len(bloque) < n_velas + 1:
@@ -594,12 +559,12 @@ def inicio_movimiento_5m(df, symbol, ts_cierre_vela,
             continue
 
         return {
-            "p_ult": p_ult,
-            "subidas": subidas,
-            "mov_ventana": mov_ventana,
-            "mov_desde_min": mov_desde_min,
-            "ts_ult": bloque.index[-1],
-        }
+        "p_ult": p_ult,
+        "subidas": subidas,
+        "mov_ventana": mov_ventana,
+        "mov_desde_min": mov_desde_min,
+        "ts_ult": bloque.index[-1],
+    }
 
     return None
 
@@ -1544,16 +1509,16 @@ def main():
         print("   🔥 Señales detectadas:")
         for a in radar_alertas:
             print(f"      {a}")
-
+        
         msg_radar = "📡 *RADAR DE BALLENAS*\n━━━━━━━━━━━━━━━━━━━\n"
         msg_radar += "\n".join(radar_alertas)
         msg_radar += f"\n\n⚪ xk1: {btc['estado']}"
         enviar_telegram(msg_radar)
-        guardar_alertas_state(alertas_state)
+        guardar_alertas_state(alertas_state)  # <-- AÑADIR ESTA LÍNEA
     else:
         print("   ⚪ Sin señales fuertes en el radar.")
     # ==========================================
-
+  
     # === ESCANEAR FIBONACCI (toque + confirmación LONG) ===
     print(f"\n📡 Escaneando Fibonacci...")
     fibo_toques, fibo_confs = escanear_fibo(df, alertas_state)
@@ -1562,15 +1527,14 @@ def main():
     if fibo_toques:
         print(f"   🎯 {len(fibo_toques)} toques de nivel Fibo:")
         for a in fibo_toques:
-            print(f"      {a['symbol']} — {a['nivel']} "
-                  f"(dist {a['distancia']:.2f}%)")
+            print(f"      {a['symbol']} — {a['nivel']} (dist {a['distancia']:.2f}%)")
 
         msg_toque = "🎯 *FIBONACCI — TOQUE DE NIVEL*\n"
         msg_toque += "━━━━━━━━━━━━━━━━━━━\n"
         for a in fibo_toques:
             emoji = "🟢" if a["nivel"] == "0.786" else "🟡"
-            origen = "⬇️ desde arriba" if a.get("viene_de_arriba") else "⬆️ desde abajo"
-            msg_toque += f"{emoji} *{a_real(a['symbol'])}* — Fibo {a['nivel']}\n"
+            origen = "⬇️" if a.get("viene_de_arriba") else "⬆️"
+            msg_toque += f"{emoji} *{a_real(a['symbol'])}* — {a['nivel']}\n"
             msg_toque += f"   Precio: ${a['precio']:.6f}\n"
             msg_toque += f"   Nivel:  ${a['nivel_valor']:.6f}\n"
             msg_toque += f"   Distancia: {a['distancia']:.2f}% {origen}\n\n"
@@ -1585,15 +1549,14 @@ def main():
     if fibo_confs:
         print(f"   ✅ {len(fibo_confs)} confirmaciones LONG:")
         for a in fibo_confs:
-            print(f"      {a['symbol']} — {a['nivel']} "
-                  f"rebote +{a['rebote_pct']:.2f}%")
+            print(f"      {a['symbol']} — {a['nivel']} rebote +{a['rebote_pct']:.2f}%")
 
         msg_conf = "✅ *FIBONACCI — CONFIRMACIÓN LONG*\n"
         msg_conf += "━━━━━━━━━━━━━━━━━━━\n"
         for a in fibo_confs:
             emoji = "🟢" if a["nivel"] == "0.786" else "🟡"
             hora_toque = (a["ts_toque"] - timedelta(hours=5)).strftime("%H:%M")
-            msg_conf += f"{emoji} *{a_real(a['symbol'])}* — Fibo {a['nivel']}\n"
+            msg_conf += f"{emoji} *{a_real(a['symbol'])}* — {a['nivel']}\n"
             msg_conf += f"   Precio: ${a['precio']:.6f}\n"
             msg_conf += f"   Nivel:  ${a['nivel_valor']:.6f}\n"
             msg_conf += f"   Rebote: +{a['rebote_pct']:.2f}% (máx +{a['rebote_max_pct']:.2f}%)\n"
@@ -1607,7 +1570,6 @@ def main():
     else:
         print("   ⚪ Sin confirmaciones LONG en Fibonacci.")
 
-    # === CAMBIO DE ESTADO BTC (fuera del else, siempre se evalúa) ===
     estado_previo = cargar_btc_estado_previo()
     if estado_previo and estado_previo != btc["estado"]:
         print(f"\n🔄 Cambio {a_real('xk1')}: {estado_previo} → {btc['estado']}")
