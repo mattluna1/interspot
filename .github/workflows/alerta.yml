@@ -38,6 +38,7 @@ jobs:
           SECRETOS_JSON: ${{ secrets.SECRETOS_JSON }}
           RADAR_CONFIG: ${{ secrets.RADAR_CONFIG }} # <-- NUEVO
           RECOLECTORES_URLS: ${{ secrets.RECOLECTORES_URLS }} # <-- ¿ESTÁ ESTA LÍNEA?
+          FIBO_NIVELES: ${{ secrets.FIBO_NIVELES }}
         run: python -u alerta_arranque.py
 
       - name: Commit state files
